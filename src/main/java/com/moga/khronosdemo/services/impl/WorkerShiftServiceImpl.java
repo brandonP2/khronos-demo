@@ -56,6 +56,7 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
             WorkerShiftRequestDTO request = requests.get(i);
 
             Worker worker = getWorker(request.workerId());
+
             Zone zone = getZone(request.zoneId());
 
             try {
@@ -161,6 +162,10 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
     }
 
     private void validate(WorkerShiftRequestDTO request, Worker worker, Zone zone, Long shiftId) {
+
+        if(worker.getActive().equals(false)) {
+            throw new BusinessRuleException("Worker is not active");
+        }
 
         if (!request.endTime().isAfter(request.startTime())) {
             throw new BusinessRuleException("End time must be after start time");

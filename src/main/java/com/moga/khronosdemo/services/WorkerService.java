@@ -18,4 +18,7 @@ public interface WorkerService {
     WorkerResponseDTO update(Long userId, WorkerRequestDTO request);
 
     void delete(Long userId);
+
+    void changeActivationStatus(Long userId);
+
 }

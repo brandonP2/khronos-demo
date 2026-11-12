@@ -71,7 +71,7 @@ public class UserController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsWorker(#id)")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     public void delete(@PathVariable Long id) {
         userService.delete(id);
     }

@@ -86,6 +86,14 @@ public class WorkerServiceImpl implements WorkerService {
         workerRepository.delete(getWorker(userId));
     }
 
+    @Override
+    public void changeActivationStatus(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId));
+
+        getWorker(user.getId()).setActive(!getWorker(user.getId()).getActive().equals(true));
+    }
+
     private Worker getWorker(Long userId) {
         return workerRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Worker", userId));
