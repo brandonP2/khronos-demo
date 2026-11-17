@@ -52,10 +52,23 @@ final class RateSchedule {
      * first rate, because the cost would then be understated.
      */
     BigDecimal costOf(Map<LocalDate, Long> minutesByDay) {
+        Map<LocalDate, BigDecimal> byDay = rateTimesMinutesByDay(minutesByDay);
+        if (byDay == null) {
+            return null;
+        }
+        return toEuros(byDay.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add));
+    }
+
+    /**
+     * Each day's minutes times the rate in force that day, not rounded yet, for the days that have
+     * minutes. Null under the same conditions as {@link #costOf}. {@link #toEuros} turns a sum of these
+     * into euros.
+     */
+    Map<LocalDate, BigDecimal> rateTimesMinutesByDay(Map<LocalDate, Long> minutesByDay) {
         if (rates.isEmpty()) {
             return null;
         }
-        BigDecimal rateTimesMinutes = BigDecimal.ZERO;
+        Map<LocalDate, BigDecimal> byDay = new TreeMap<>();
         for (Map.Entry<LocalDate, Long> day : minutesByDay.entrySet()) {
             if (day.getValue() == 0) {
                 continue;
@@ -64,8 +77,13 @@ final class RateSchedule {
             if (rate == null) {
                 return null;
             }
-            rateTimesMinutes = rateTimesMinutes.add(rate.multiply(BigDecimal.valueOf(day.getValue())));
+            byDay.put(day.getKey(), rate.multiply(BigDecimal.valueOf(day.getValue())));
         }
+        return byDay;
+    }
+
+    // Rate times minutes, in euros rounded to cents
+    static BigDecimal toEuros(BigDecimal rateTimesMinutes) {
         return rateTimesMinutes.divide(MINUTES_PER_HOUR, 2, RoundingMode.HALF_UP);
     }
 }

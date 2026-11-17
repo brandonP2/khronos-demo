@@ -23,14 +23,12 @@ import com.moga.khronosdemo.services.ReportService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -39,7 +37,8 @@ import java.util.TreeMap;
 /**
  * Planned against worked hours and staff costs. Each report loads everything it needs in a fixed
  * number of queries (workers, shifts, entries, rates) and adds it up in memory, however many workers
- * or days the range holds.
+ * or days the range holds. The establishment's report reads them through StaffWork, as the business
+ * summary does, so both work out staff costs the same way.
  */
 @Service
 @Transactional(readOnly = true)
@@ -58,6 +57,7 @@ public class ReportServiceImpl implements ReportService {
     private final WorkerShiftRepository workerShiftRepository;
     private final TimeEntryRepository timeEntryRepository;
     private final WorkerRateRepository workerRateRepository;
+    private final StaffWorkLoader staffWorkLoader;
     private final WorkerShiftMapper workerShiftMapper;
     private final TimeEntryMapper timeEntryMapper;
     private final TimeTrackingProperties properties;
@@ -65,13 +65,15 @@ public class ReportServiceImpl implements ReportService {
 
     public ReportServiceImpl(EstablishmentRepository establishmentRepository, WorkerRepository workerRepository,
                              WorkerShiftRepository workerShiftRepository, TimeEntryRepository timeEntryRepository,
-                             WorkerRateRepository workerRateRepository, WorkerShiftMapper workerShiftMapper,
-                             TimeEntryMapper timeEntryMapper, TimeTrackingProperties properties, Clock clock) {
+                             WorkerRateRepository workerRateRepository, StaffWorkLoader staffWorkLoader,
+                             WorkerShiftMapper workerShiftMapper, TimeEntryMapper timeEntryMapper,
+                             TimeTrackingProperties properties, Clock clock) {
         this.establishmentRepository = establishmentRepository;
         this.workerRepository = workerRepository;
         this.workerShiftRepository = workerShiftRepository;
         this.timeEntryRepository = timeEntryRepository;
         this.workerRateRepository = workerRateRepository;
+        this.staffWorkLoader = staffWorkLoader;
         this.workerShiftMapper = workerShiftMapper;
         this.timeEntryMapper = timeEntryMapper;
         this.properties = properties;
@@ -83,40 +85,17 @@ public class ReportServiceImpl implements ReportService {
         DateRange range = DateRange.bounded(from, to, MAX_DAYS);
         Establishment establishment = establishmentRepository.findById(establishmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Establishment", establishmentId));
-        ZoneId zone = establishment.getZoneId();
         Instant now = clock.instant();
-        LocalDate today = LocalDate.ofInstant(now, zone);
+        LocalDate today = LocalDate.ofInstant(now, establishment.getZoneId());
 
-        List<Worker> workers = new ArrayList<>(workerRepository.findWithUserByEstablishment(establishmentId));
+        StaffWork staff = staffWorkLoader.load(establishment, range.from(), range.to());
+        // Inactive workers only appear when they have something in the range
+        List<Worker> workers = new ArrayList<>(staff.listedWorkers());
         workers.sort(BY_NAME);
-        Map<Long, WorkTally> tallies = new HashMap<>();
-        workers.forEach(worker -> tallies.put(worker.getUserId(), new WorkTally(zone)));
-        // Shifts and entries belong to the establishment's current workers, because a worker with either
-        // cannot move to another establishment; anything else is skipped rather than failing the report
-        for (WorkerShift shift : workerShiftRepository.findByEstablishmentBetween(establishmentId, range.from(), range.to())) {
-            WorkTally tally = tallies.get(shift.getWorker().getUserId());
-            if (tally != null) {
-                tally.add(shift);
-            }
-        }
-        for (TimeEntry entry : timeEntryRepository.findCountedByEstablishment(establishmentId, range.from(), range.to())) {
-            WorkTally tally = tallies.get(entry.getWorker().getUserId());
-            if (tally != null) {
-                tally.add(entry);
-            }
-        }
-        Map<Long, RateSchedule> rates = RateSchedule.byWorker(workerRateRepository.findByEstablishment(establishmentId));
-
-        List<WorkerHoursResponseDTO> rows = new ArrayList<>();
-        for (Worker worker : workers) {
-            WorkTally tally = tallies.get(worker.getUserId());
-            // Inactive workers only appear when they have something in the range
-            if (!worker.getActive() && tally.isEmpty()) {
-                continue;
-            }
-            rows.add(row(worker, tally, rates.getOrDefault(worker.getUserId(), RateSchedule.none()), today, now));
-        }
-        return new HoursReportResponseDTO(range.from(), range.to(), CURRENCY, rows, totals(rows));
+        List<WorkerHoursResponseDTO> rows = workers.stream()
+                .map(worker -> row(worker, staff.tallyOf(worker), staff.ratesOf(worker), today, now))
+                .toList();
+        return new HoursReportResponseDTO(range.from(), range.to(), CURRENCY, rows, totals(rows, staff));
     }
 
     @Override
@@ -217,16 +196,10 @@ public class ReportServiceImpl implements ReportService {
                 rates.costOf(tally.workedMinutesByDay()));
     }
 
-    private static HoursTotalsResponseDTO totals(List<WorkerHoursResponseDTO> rows) {
+    // Costs add up the workers' known costs, as the business summary's staff cost does; null when none is known
+    private static HoursTotalsResponseDTO totals(List<WorkerHoursResponseDTO> rows, StaffWork staff) {
         long planned = rows.stream().mapToLong(WorkerHoursResponseDTO::plannedMinutes).sum();
         long worked = rows.stream().mapToLong(WorkerHoursResponseDTO::workedMinutes).sum();
-        return new HoursTotalsResponseDTO(planned, worked, worked - planned,
-                sumKnown(rows.stream().map(WorkerHoursResponseDTO::plannedCost).toList()),
-                sumKnown(rows.stream().map(WorkerHoursResponseDTO::actualCost).toList()));
-    }
-
-    // Adds up the known costs; null when no worker has one
-    private static BigDecimal sumKnown(List<BigDecimal> costs) {
-        return costs.stream().filter(Objects::nonNull).reduce(BigDecimal::add).orElse(null);
+        return new HoursTotalsResponseDTO(planned, worked, worked - planned, staff.plannedCost(), staff.actualCost());
     }
 }
