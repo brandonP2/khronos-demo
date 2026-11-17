@@ -13,6 +13,7 @@ import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.repositories.WorkerEventRepository;
+import com.moga.khronosdemo.repositories.WorkerRateRepository;
 import com.moga.khronosdemo.repositories.WorkerRepository;
 import com.moga.khronosdemo.repositories.WorkerShiftRepository;
 import com.moga.khronosdemo.repositories.ZoneRepository;
@@ -89,7 +90,13 @@ public abstract class IntegrationTest {
     protected WorkerEventRepository workerEventRepository;
 
     @Autowired
+    protected WorkerRateRepository workerRateRepository;
+
+    @Autowired
     protected PasswordEncoder passwordEncoder;
+
+    @Autowired
+    protected TestClock clock;
 
     @Autowired
     private TokenService tokenService;
@@ -101,6 +108,12 @@ public abstract class IntegrationTest {
     // and stops those threads from writing to email_logs while the next test cleans the database.
     @MockitoBean
     protected EmailService emailService;
+
+    @BeforeEach
+    @AfterEach
+    void useRealTime() {
+        clock.useRealTime();
+    }
 
     @BeforeEach
     @AfterEach
