@@ -145,6 +145,27 @@ class BusinessCsvTests extends IntegrationTest {
     }
 
     @Test
+    void aDraftWithoutCountedCashLeavesItsCountedCashAndDifferenceEmpty() throws Exception {
+        mockMvc.perform(postJson("/api/cash-closings", """
+                        { "establishmentId": %d, "businessDate": "2030-05-12", "openingFloat": 100, "cashSales": 80,
+                          "cardSales": 20 }
+                        """.formatted(venue.getId())).with(as(owner)))
+                .andExpect(status().isCreated());
+
+        List<String> closings = lines(mockMvc.perform(get("/api/reports/establishment/{id}/cash-closings.csv" + RANGE,
+                        venue.getId()).with(as(owner)))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertEquals("12/05/2030;Borrador;100,00;80,00;20,00;0,00;100,00;0,00;0,00;180,00;;;;;;;", closings.get(3));
+
+        List<String> summary = lines(mockMvc.perform(get("/api/reports/establishment/{id}/summary.csv" + RANGE,
+                        venue.getId()).with(as(owner)))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertEquals("12/05/2030;100,00;0,00;;100,00;Borrador;", summary.get(5));
+    }
+
+    @Test
     void theExportsNeedABoundedRange() throws Exception {
         for (String file : List.of("cash-closings.csv", "expenses.csv", "summary.csv")) {
             String url = "/api/reports/establishment/" + venue.getId() + "/" + file;

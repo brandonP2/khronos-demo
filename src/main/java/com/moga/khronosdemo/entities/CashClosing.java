@@ -16,9 +16,10 @@ import static com.moga.khronosdemo.entities.Money.euros;
  * float, cash taken out of the till and the cash counted at the end, all entered by hand in euros. It
  * is an internal management record, not an invoice or a tax record.
  * <p>
- * A draft can be edited, and its figures follow the cash expenses recorded for its day. Closing it
- * stores the figures, which stay as they were until it is reopened. Every change is kept in
- * {@link CashClosingChange}.
+ * A draft can be edited, and its figures follow the cash expenses recorded for its day. It can be saved
+ * before the cash is counted: countedCash, and the difference worked out from it, stay null until then.
+ * Closing it needs the counted cash and stores the figures, which stay as they were until it is
+ * reopened. Every change is kept in {@link CashClosingChange}.
  */
 @Entity
 @Table(
@@ -34,7 +35,7 @@ public class CashClosing {
      * What the API works out from the amounts entered, in euros with two decimals: the day's cash
      * expenses, total sales (cash + card + other), the cash expected in the till (float + cash sales -
      * cash expenses - withdrawals) and the difference (counted - expected), which is negative when cash
-     * is missing.
+     * is missing and null while a draft's cash has not been counted.
      */
     public record Figures(BigDecimal cashExpenses, BigDecimal totalSales, BigDecimal expectedCash,
                           BigDecimal difference) {
@@ -73,7 +74,8 @@ public class CashClosing {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal cashWithdrawals;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    // Null while a draft's cash has not been counted; a closed day always has it (see V11)
+    @Column(precision = 12, scale = 2)
     private BigDecimal countedCash;
 
     // Informative only: tips are not sales
@@ -130,6 +132,10 @@ public class CashClosing {
         return status == CashClosingStatus.CLOSED;
     }
 
+    public boolean isCounted() {
+        return countedCash != null;
+    }
+
     /**
      * The figures the day was closed with or, for a draft, the ones that follow from the amounts entered
      * and the cash expenses recorded for the day so far. A closed day ignores the argument, which may
@@ -144,7 +150,7 @@ public class CashClosing {
                 euros(cashExpensesSoFar),
                 euros(cashSales.add(cardSales).add(otherSales)),
                 euros(expected),
-                euros(countedCash.subtract(expected)));
+                countedCash != null ? euros(countedCash.subtract(expected)) : null);
     }
 
     // Freezes the figures worked out at closing time

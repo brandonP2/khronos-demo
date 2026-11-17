@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
@@ -159,11 +160,13 @@ final class BusinessPeriod {
         return !closings.containsKey(day) && day.isBefore(today) && activeDays.contains(day);
     }
 
-    // The differences of the closed days, or of the drafts, added up
+    // The differences of the closed days, or of the drafts, added up. A draft whose cash has not been
+    // counted has no difference yet and adds nothing
     private BigDecimal cashDifference(boolean closed) {
         return closings.values().stream()
                 .filter(closing -> closing.isClosed() == closed)
                 .map(closing -> figures.get(closing.getBusinessDate()).difference())
+                .filter(Objects::nonNull)
                 .reduce(ZERO, BigDecimal::add);
     }
 

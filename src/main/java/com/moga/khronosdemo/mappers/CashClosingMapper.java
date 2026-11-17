@@ -64,14 +64,15 @@ public class CashClosingMapper {
     }
 
     // The amounts entered; the establishment and the business day are set once, when the closing is created.
-    // Amounts are validated to two decimals, so setting the scale never rounds them.
+    // Amounts are validated to two decimals, so setting the scale never rounds them. A null countedCash
+    // leaves the draft without counted cash, also when it had some before, as PUT replaces every amount.
     public void updateEntity(CashClosing closing, CashClosingRequestDTO request) {
         closing.setOpeningFloat(euros(request.openingFloat()));
         closing.setCashSales(euros(request.cashSales()));
         closing.setCardSales(euros(request.cardSales()));
         closing.setOtherSales(euros(request.otherSales() != null ? request.otherSales() : BigDecimal.ZERO));
         closing.setCashWithdrawals(euros(request.cashWithdrawals() != null ? request.cashWithdrawals() : BigDecimal.ZERO));
-        closing.setCountedCash(euros(request.countedCash()));
+        closing.setCountedCash(request.countedCash() != null ? euros(request.countedCash()) : null);
         closing.setTips(request.tips() != null ? euros(request.tips()) : null);
         closing.setNotes(StringUtils.hasText(request.notes()) ? request.notes().strip() : null);
     }

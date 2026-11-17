@@ -37,8 +37,9 @@ public record CashClosingRequestDTO(
         @DecimalMin("0") @Digits(integer = 8, fraction = 2)
         BigDecimal cashWithdrawals,
 
-        // Cash counted in the till at closing time
-        @NotNull @DecimalMin("0") @Digits(integer = 8, fraction = 2)
+        // Cash counted in the till at closing time. Optional on a draft, which can be saved before the cash
+        // is counted; the day can only be closed once it is set
+        @DecimalMin("0") @Digits(integer = 8, fraction = 2)
         BigDecimal countedCash,
 
         // Optional and informative only: tips are not sales

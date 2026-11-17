@@ -256,18 +256,18 @@ One closing per establishment and business day. The request (`POST` to create, `
 }
 ```
 
-`otherSales` (Bizum, vouchers...) and `cashWithdrawals` (cash taken out of the till) are 0 when left out; `tips` (informative, not sales) and `notes` (at most 500 characters) are optional. `establishmentId` and `businessDate` are only read when the closing is created: an edit ignores them. The response adds what Khronos works out:
+`otherSales` (Bizum, vouchers...) and `cashWithdrawals` (cash taken out of the till) are 0 when left out; `tips` (informative, not sales) and `notes` (at most 500 characters) are optional. `countedCash` is optional too while the closing is a draft, so it can be saved before the till is counted: until it is set, `countedCash` and `difference` are `null` in the response (don't send 0, which would show a false difference). A `PUT` replaces every amount, so an edit that leaves `countedCash` out clears it. A day can only be closed once its cash is counted. `establishmentId` and `businessDate` are only read when the closing is created: an edit ignores them. The response adds what Khronos works out:
 
 | Field | How |
 |---|---|
 | `cashExpenses` | The day's expenses paid in cash |
 | `totalSales` | `cashSales + cardSales + otherSales` |
 | `expectedCash` | `openingFloat + cashSales - cashExpenses - cashWithdrawals` |
-| `difference` | `countedCash - expectedCash`: negative when cash is missing |
+| `difference` | `countedCash - expectedCash`: negative when cash is missing; `null` while `countedCash` is `null` |
 
 A closing is a `DRAFT` until it is closed. A draft can be edited and its figures are worked out again on every read, so an expense entered later shows up. `PUT /{id}/close` stores the figures as they are and the status becomes `CLOSED`: from then on they don't change. A difference larger than 5.00 EUR either way (`CASH_DIFFERENCE_THRESHOLD`) needs a `differenceReason` (at most 255 characters) to close. `PUT /{id}/reopen` with a `reason` (3 to 255 characters) makes it a draft again; the stored figures, the reason for the difference and who closed it are cleared from the closing and stay in its history.
 
-Every creation, edit, close and reopen adds a row to the closing's history (`GET /{id}/history`, oldest first) with the action (`CREATED`, `UPDATED`, `CLOSED`, `REOPENED`), who did it, when, the reason (the `differenceReason` when closing, the `reason` when reopening) and the totals right after. History rows can't be changed: a database trigger rejects updates.
+Every creation, edit, close and reopen adds a row to the closing's history (`GET /{id}/history`, oldest first) with the action (`CREATED`, `UPDATED`, `CLOSED`, `REOPENED`), who did it, when, the reason (the `differenceReason` when closing, the `reason` when reopening) and the totals right after (`countedCash` and `difference` are `null` in the rows where the cash wasn't counted yet). History rows can't be changed: a database trigger rejects updates.
 
 Each of these 409s carries a stable `code` (see [Error format](#error-format)); clients should rely on it rather than on the message.
 
@@ -277,6 +277,7 @@ Each of these 409s carries a stable `code` (see [Error format](#error-format)); 
 | `POST` | `The business date cannot be in the future` (today is the establishment's local date) | `FUTURE_DATE` |
 | `PUT /{id}` | `A closed cash closing cannot be edited; reopen it first` | `CASH_CLOSING_CLOSED` |
 | `PUT /{id}/close` | `The cash closing is already closed` | `CASH_CLOSING_CLOSED` |
+| `PUT /{id}/close` | `The cash has not been counted; enter countedCash before closing the day` | `CASH_NOT_COUNTED` |
 | `PUT /{id}/close` | `The cash difference of -7.50 EUR is larger than the 5.00 EUR allowed without a reason; send a differenceReason to close the day` | `DIFFERENCE_REASON_REQUIRED` |
 | `PUT /{id}/reopen` | `The cash closing is not closed` | `CASH_CLOSING_NOT_CLOSED` |
 | `DELETE /{id}` | `A closed cash closing cannot be deleted; reopen it to correct it instead` | `CASH_CLOSING_CLOSED` |
@@ -301,8 +302,8 @@ Cash expenses come out of the till, so while a day's closing is `CLOSED` its cas
 
 `GET /api/reports/establishment/{id}/summary?from&to` (both required, at most 366 days) returns:
 
-- `totals`: `sales`, `cashSales`, `cardSales`, `otherSales` and `tips` from the closings of the range, drafts included; `expenses` (all of them) and `payrollExpenses` (the `PAYROLL` ones); `laborCost`, `laborCostPartial` and `workersWithoutCost` (as `costPartial` and `workersWithoutCost` in the hours report) and `plannedLaborCost`; `grossMargin` and `laborCostSource`; `laborCostPercent`; `cashDifference` (the differences of the `CLOSED` days added up) and `draftCashDifference` (what the drafts' differences add up to right now; provisional, since a draft's figures still change); and `closedDays`, `draftDays` and `missingClosingDays`.
-- `days`: one row for every day of the range, earliest first, with `sales`, `expenses`, `laborCost`, `margin`, `closingStatus` and `cashDifference` (null without a closing).
+- `totals`: `sales`, `cashSales`, `cardSales`, `otherSales` and `tips` from the closings of the range, drafts included; `expenses` (all of them) and `payrollExpenses` (the `PAYROLL` ones); `laborCost`, `laborCostPartial` and `workersWithoutCost` (as `costPartial` and `workersWithoutCost` in the hours report) and `plannedLaborCost`; `grossMargin` and `laborCostSource`; `laborCostPercent`; `cashDifference` (the differences of the `CLOSED` days added up) and `draftCashDifference` (what the drafts' differences add up to right now; provisional, since a draft's figures still change, and a draft whose cash hasn't been counted adds nothing); and `closedDays`, `draftDays` and `missingClosingDays`.
+- `days`: one row for every day of the range, earliest first, with `sales`, `expenses`, `laborCost`, `margin`, `closingStatus` and `cashDifference` (null without a closing, or while its cash hasn't been counted).
 - `expensesByCategory`: the categories with expenses, largest first.
 - `previous`: `sales`, `expenses`, `laborCost`, `grossMargin` and `laborCostSource` of the period of the same length right before `from`.
 
@@ -326,9 +327,9 @@ In the same format as the [time-tracking exports](#csv-exports) (UTF-8 with a BO
 
 | Export | File | Columns |
 |---|---|---|
-| `GET /api/reports/establishment/{id}/cash-closings.csv` | `cierres-caja_{from}_{to}.csv` | One row per closing, earliest first: `Día de servicio;Estado;Fondo inicial (EUR);Ventas en efectivo (EUR);Ventas con tarjeta (EUR);Otras ventas (EUR);Ventas totales (EUR);Gastos en efectivo (EUR);Retiradas de efectivo (EUR);Efectivo esperado (EUR);Efectivo contado (EUR);Descuadre (EUR);Motivo del descuadre;Propinas (EUR);Notas;Cerrado el;Cerrado por`. `Estado` is `Borrador` or `Cerrado`. |
+| `GET /api/reports/establishment/{id}/cash-closings.csv` | `cierres-caja_{from}_{to}.csv` | One row per closing, earliest first: `Día de servicio;Estado;Fondo inicial (EUR);Ventas en efectivo (EUR);Ventas con tarjeta (EUR);Otras ventas (EUR);Ventas totales (EUR);Gastos en efectivo (EUR);Retiradas de efectivo (EUR);Efectivo esperado (EUR);Efectivo contado (EUR);Descuadre (EUR);Motivo del descuadre;Propinas (EUR);Notas;Cerrado el;Cerrado por`. `Estado` is `Borrador` or `Cerrado`; a draft whose cash hasn't been counted leaves `Efectivo contado` and `Descuadre` empty. |
 | `GET /api/reports/establishment/{id}/expenses.csv` | `gastos_{from}_{to}.csv` | One row per expense, oldest first: `Fecha;Categoría;Descripción;Proveedor;Importe (EUR);Medio de pago;Notas;Registrado por`, with the category and payment method in Spanish. |
-| `GET /api/reports/establishment/{id}/summary.csv` | `resumen_{from}_{to}.csv` | One row per day: `Fecha;Ventas (EUR);Gastos (EUR);Coste de personal (EUR);Margen (EUR);Estado del cierre;Descuadre (EUR)`. `Estado del cierre` is `Cerrado`, `Borrador`, `Falta el cierre` or `Sin cierre`; an unknown staff cost is left empty, and that day's `Margen` then takes off its payroll expenses, as in the summary. |
+| `GET /api/reports/establishment/{id}/summary.csv` | `resumen_{from}_{to}.csv` | One row per day: `Fecha;Ventas (EUR);Gastos (EUR);Coste de personal (EUR);Margen (EUR);Estado del cierre;Descuadre (EUR)`. `Estado del cierre` is `Cerrado`, `Borrador`, `Falta el cierre` or `Sin cierre`; an unknown staff cost is left empty, and that day's `Margen` then takes off its payroll expenses, as in the summary; so is `Descuadre` without a closing or while its cash hasn't been counted. |
 
 ### Deleting and cash records
 
@@ -547,6 +548,7 @@ Every error comes back in the same shape:
 | `CASH_CLOSING_NOT_CLOSED` | 409 | Reopening a cash closing that is not closed |
 | `CASH_CLOSING_WAS_CLOSED` | 409 | Deleting a draft that was closed before and reopened |
 | `DIFFERENCE_REASON_REQUIRED` | 409 | Closing a day whose cash difference is over the threshold without a `differenceReason` |
+| `CASH_NOT_COUNTED` | 409 | Closing a day whose `countedCash` is still `null` |
 | `CASH_DAY_CLOSED` | 409 | Adding, changing, moving or deleting a cash expense of a day whose closing is closed; `details.date` is that day |
 | `FUTURE_DATE` | 409 | A cash closing's `businessDate` or an expense's `date` is after today in the establishment's time zone |
 
@@ -600,7 +602,8 @@ Flyway owns the schema. The scripts are in `src/main/resources/db/migration` and
 - `V4` to `V7` add the establishment's time zone (existing ones get `Europe/Madrid`), the generated interval columns of shifts, hourly rates, and time entries with their history. They only add columns, tables, indexes and a trigger, so they run on a database that already has data.
 - `V8` changes the time entries' foreign keys to their worker and establishment, and the history's to its entry, from `ON DELETE CASCADE` to `ON DELETE RESTRICT`. Only the delete action changes, so the existing rows already meet the new constraints.
 - `V9` and `V10` add expenses, and cash closings with their history and its append-only trigger. They only add sequences, tables, indexes, a function and a trigger, so they run on a database that already has data.
-- Any schema change goes in a new script, `V11__what_it_does.sql`, `V12__...`. Never edit a script that has already run anywhere.
+- `V11` lets a draft cash closing be saved before its cash is counted: `counted_cash` becomes nullable in `cash_closings`, and `counted_cash` and `difference` in their history. It only drops `NOT NULL` and adds checks that every existing row already meets (a closed day has counted cash; in the history both are null or neither is), so it runs on a database that already has data.
+- Any schema change goes in a new script, `V12__what_it_does.sql`, `V13__...`. Never edit a script that has already run anywhere.
 
 ### Tests
 

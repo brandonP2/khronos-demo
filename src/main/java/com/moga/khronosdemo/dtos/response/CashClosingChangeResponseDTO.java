@@ -5,7 +5,8 @@ import com.moga.khronosdemo.entities.enums.CashClosingAction;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-// totalSales, countedCash and difference are the closing's values right after the change
+// totalSales, countedCash and difference are the closing's values right after the change; countedCash and
+// difference are null when the cash had not been counted yet
 public record CashClosingChangeResponseDTO(
         Long id,
         CashClosingAction action,

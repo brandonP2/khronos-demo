@@ -64,7 +64,8 @@ public class CashClosingChange {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal cashWithdrawals;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    // Null, like the difference, when the closing's cash had not been counted yet (see V11)
+    @Column(precision = 12, scale = 2)
     private BigDecimal countedCash;
 
     @Column(precision = 12, scale = 2)
@@ -79,7 +80,7 @@ public class CashClosingChange {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal expectedCash;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(precision = 12, scale = 2)
     private BigDecimal difference;
 
     public CashClosingChange() {

@@ -235,6 +235,25 @@ class BusinessSummaryTests extends IntegrationTest {
     }
 
     @Test
+    void aDraftWithoutCountedCashCountsItsSalesButNoDifference() throws Exception {
+        User owner2 = createOwner("owner2");
+        Establishment uncounted = createEstablishment(owner2);
+        closing(uncounted, THU, "100", "200", "0", "0", "0", "290", null);
+        closing(uncounted, FRI, "100", "300", "50", "0", "0", null, null);
+
+        mockMvc.perform(getJson("/api/reports/establishment/{id}/summary" + RANGE, uncounted.getId()).with(as(owner2)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totals.sales").value(550.0))
+                .andExpect(jsonPath("$.totals.draftDays").value(2))
+                .andExpect(jsonPath("$.totals.cashDifference").value(0.0))
+                // Thursday's -10; Friday's cash hasn't been counted, so it has no difference yet
+                .andExpect(jsonPath("$.totals.draftCashDifference").value(-10.0))
+                .andExpect(jsonPath("$.days[*].closingStatus", contains("NONE", "DRAFT", "DRAFT", "NONE", "NONE", "NONE")))
+                .andExpect(jsonPath("$.days[*].sales", contains(0.0, 200.0, 350.0, 0.0, 0.0, 0.0)))
+                .andExpect(jsonPath("$.days[*].cashDifference", contains(null, -10.0, null, null, null, null)));
+    }
+
+    @Test
     void withoutSalesThePercentageIsUnknownAndTheMarginIsALoss() throws Exception {
         User owner2 = createOwner("owner2");
         Establishment noSales = createEstablishment(owner2);

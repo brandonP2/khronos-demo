@@ -36,6 +36,9 @@ public enum ErrorCode {
     /** 409 when a day is closed with a cash difference over the threshold and no differenceReason. */
     DIFFERENCE_REASON_REQUIRED,
 
+    /** 409 when a day is closed before its cash has been counted (countedCash is null). */
+    CASH_NOT_COUNTED,
+
     /**
      * 409 when a cash expense is added, changed, moved or deleted on a day whose cash closing is closed;
      * details.date is that day.

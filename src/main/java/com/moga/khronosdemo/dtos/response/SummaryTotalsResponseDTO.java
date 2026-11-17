@@ -32,7 +32,8 @@ public record SummaryTotalsResponseDTO(
         BigDecimal laborCostPercent,
         // The differences of the range's CLOSED days added up; drafts can still change, so they are left out
         BigDecimal cashDifference,
-        // The differences the range's drafts show right now, added up: provisional until they are closed
+        // The differences the range's drafts show right now, added up: provisional until they are closed. A
+        // draft whose cash has not been counted adds nothing
         BigDecimal draftCashDifference,
         int closedDays,
         int draftDays,

@@ -109,7 +109,8 @@ class CashClosingTests extends IntegrationTest {
                 .andExpect(jsonPath("$.fieldErrors.openingFloat").value("must not be null"))
                 .andExpect(jsonPath("$.fieldErrors.cashSales").value("must not be null"))
                 .andExpect(jsonPath("$.fieldErrors.cardSales").value("must not be null"))
-                .andExpect(jsonPath("$.fieldErrors.countedCash").value("must not be null"))
+                // A draft can be saved before the cash is counted
+                .andExpect(jsonPath("$.fieldErrors.countedCash").doesNotExist())
                 .andExpect(jsonPath("$.fieldErrors.otherSales").doesNotExist())
                 .andExpect(jsonPath("$.fieldErrors.cashWithdrawals").doesNotExist())
                 .andExpect(jsonPath("$.fieldErrors.tips").doesNotExist());
@@ -149,6 +150,63 @@ class CashClosingTests extends IntegrationTest {
                         """, id).with(as(owner)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.reason").value("size must be between 3 and 255"));
+    }
+
+    @Test
+    void aDraftCanBeSavedBeforeTheCashIsCountedButNotClosed() throws Exception {
+        expense(FRI, "CASH", "20");
+        String uncounted = closing(venue, FRI, "null");
+
+        MvcResult created = mockMvc.perform(postJson("/api/cash-closings", uncounted).with(as(owner)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.countedCash").value(nullValue()))
+                .andExpect(jsonPath("$.cashExpenses").value(20.0))
+                .andExpect(jsonPath("$.expectedCash").value(750.5))
+                .andExpect(jsonPath("$.difference").value(nullValue()))
+                .andReturn();
+        String json = created.getResponse().getContentAsString();
+        assertTrue(json.contains("\"countedCash\":null"), json);
+        assertTrue(json.contains("\"difference\":null"), json);
+        Long id = longAt(created, "$.id");
+        mockMvc.perform(getJson("/api/cash-closings/establishment/{id}", venue.getId()).with(as(owner)))
+                .andExpect(jsonPath("$[0].countedCash").value(nullValue()))
+                .andExpect(jsonPath("$[0].difference").value(nullValue()));
+
+        // It can't be closed until the cash is counted
+        mockMvc.perform(put("/api/cash-closings/{id}/close", id).with(as(owner)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("The cash has not been counted; enter countedCash before"
+                        + " closing the day"))
+                .andExpect(jsonPath("$.code").value("CASH_NOT_COUNTED"));
+        assertFalse(cashClosingRepository.findById(id).orElseThrow().isClosed());
+
+        clock.advance(Duration.ofMinutes(1));
+        update(id, "748", owner);
+        clock.advance(Duration.ofMinutes(1));
+        mockMvc.perform(put("/api/cash-closings/{id}/close", id).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.countedCash").value(748.0))
+                .andExpect(jsonPath("$.difference").value(-2.5));
+
+        mockMvc.perform(getJson("/api/cash-closings/{id}/history", id).with(as(owner)))
+                .andExpect(jsonPath("$[*].action", contains("CREATED", "UPDATED", "CLOSED")))
+                .andExpect(jsonPath("$[*].countedCash", contains(null, 748.0, 748.0)))
+                .andExpect(jsonPath("$[*].difference", contains(null, -2.5, -2.5)));
+
+        // An edit of a draft that leaves countedCash out clears it, as PUT replaces every amount
+        Long thursday = create(venue, THU, "770.50");
+        mockMvc.perform(putJson("/api/cash-closings/{id}", """
+                        { "openingFloat": 150, "cashSales": 820.50, "cardSales": 1300.25, "cashWithdrawals": 200 }
+                        """, thursday).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.countedCash").value(nullValue()))
+                .andExpect(jsonPath("$.difference").value(nullValue()));
+
+        // The database won't take a closed day without counted cash either
+        DataIntegrityViolationException closedUncounted = assertThrows(DataIntegrityViolationException.class,
+                () -> jdbcTemplate.update("update cash_closings set counted_cash = null where id = ?", id));
+        assertTrue(closedUncounted.getMostSpecificCause().getMessage().contains("ck_cash_closings_counted_when_closed"));
     }
 
     @Test

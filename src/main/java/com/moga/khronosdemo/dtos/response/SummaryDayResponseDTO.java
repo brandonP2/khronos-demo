@@ -17,7 +17,7 @@ public record SummaryDayResponseDTO(
         BigDecimal laborCost,
         BigDecimal margin,
         DayClosingStatus closingStatus,
-        // The difference of the day's closing; null without one
+        // The difference of the day's closing; null without one, or while its cash has not been counted
         BigDecimal cashDifference
 ) {
 }

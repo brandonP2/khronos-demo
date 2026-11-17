@@ -18,6 +18,7 @@ public record CashClosingResponseDTO(
         BigDecimal cardSales,
         BigDecimal otherSales,
         BigDecimal cashWithdrawals,
+        // Null while a draft's cash has not been counted; a closed closing always has it
         BigDecimal countedCash,
         BigDecimal tips,
         String notes,
@@ -27,7 +28,7 @@ public record CashClosingResponseDTO(
         BigDecimal totalSales,
         // openingFloat + cashSales - cashExpenses - cashWithdrawals
         BigDecimal expectedCash,
-        // countedCash - expectedCash: negative when cash is missing
+        // countedCash - expectedCash: negative when cash is missing; null while countedCash is null
         BigDecimal difference,
         String differenceReason,
         Instant closedAt,

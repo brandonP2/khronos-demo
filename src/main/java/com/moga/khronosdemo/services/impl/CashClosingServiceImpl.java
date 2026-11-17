@@ -134,12 +134,17 @@ public class CashClosingServiceImpl implements CashClosingService {
         return record(closing, CashClosingAction.UPDATED, actorId, null);
     }
 
-    // Freezes the figures as they are now. A difference over the threshold, either way, needs a reason
+    // Freezes the figures as they are now. The cash has to be counted first, and a difference over the
+    // threshold, either way, needs a reason
     @Override
     public CashClosingResponseDTO close(Long id, String differenceReason, Long actorId) {
         CashClosing closing = cashRecordLock.lockCashClosing(id);
         if (closing.isClosed()) {
             throw new BusinessRuleException("The cash closing is already closed", ErrorCode.CASH_CLOSING_CLOSED);
+        }
+        if (!closing.isCounted()) {
+            throw new BusinessRuleException("The cash has not been counted; enter countedCash before closing the day",
+                    ErrorCode.CASH_NOT_COUNTED);
         }
         CashClosing.Figures figures = closing.figures(cashExpensesOf(closing));
         String reason = clean(differenceReason);
