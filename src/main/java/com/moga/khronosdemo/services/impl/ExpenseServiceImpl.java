@@ -5,10 +5,13 @@ import com.moga.khronosdemo.dtos.response.ExpenseResponseDTO;
 import com.moga.khronosdemo.entities.Establishment;
 import com.moga.khronosdemo.entities.Expense;
 import com.moga.khronosdemo.entities.User;
+import com.moga.khronosdemo.entities.enums.CashClosingStatus;
 import com.moga.khronosdemo.entities.enums.ExpenseCategory;
+import com.moga.khronosdemo.entities.enums.PaymentMethod;
 import com.moga.khronosdemo.exceptions.BusinessRuleException;
 import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.mappers.ExpenseMapper;
+import com.moga.khronosdemo.repositories.CashClosingRepository;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.ExpenseRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
@@ -22,19 +25,28 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
+/**
+ * Expenses entered by hand. Cash expenses come out of the till, so they lower the cash a closing
+ * expects: once a day's cash closing is closed, its cash expenses can't be added, changed or deleted
+ * until it is reopened. Every change to an expense first locks the establishment's row, as cash
+ * closings do (see CashClosingServiceImpl), so an expense and the closing of its day take turns.
+ */
 @Service
 @Transactional
 public class ExpenseServiceImpl implements ExpenseService {
 
     private final ExpenseRepository expenseRepository;
+    private final CashClosingRepository cashClosingRepository;
     private final EstablishmentRepository establishmentRepository;
     private final UserRepository userRepository;
     private final ExpenseMapper expenseMapper;
     private final Clock clock;
 
-    public ExpenseServiceImpl(ExpenseRepository expenseRepository, EstablishmentRepository establishmentRepository,
-                              UserRepository userRepository, ExpenseMapper expenseMapper, Clock clock) {
+    public ExpenseServiceImpl(ExpenseRepository expenseRepository, CashClosingRepository cashClosingRepository,
+                              EstablishmentRepository establishmentRepository, UserRepository userRepository,
+                              ExpenseMapper expenseMapper, Clock clock) {
         this.expenseRepository = expenseRepository;
+        this.cashClosingRepository = cashClosingRepository;
         this.establishmentRepository = establishmentRepository;
         this.userRepository = userRepository;
         this.expenseMapper = expenseMapper;
@@ -54,9 +66,11 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     public ExpenseResponseDTO create(ExpenseRequestDTO request, Long actorId) {
-        Establishment establishment = establishmentRepository.findById(request.establishmentId())
-                .orElseThrow(() -> new ResourceNotFoundException("Establishment", request.establishmentId()));
+        Establishment establishment = lockEstablishment(request.establishmentId());
         checkNotInFuture(establishment, request.date());
+        if (request.paymentMethod() == PaymentMethod.CASH) {
+            checkCashDayOpen(establishment.getId(), request.date());
+        }
 
         User author = getUser(actorId);
         Expense expense = new Expense(establishment, author, author.displayName(), auditNow());
@@ -64,10 +78,18 @@ public class ExpenseServiceImpl implements ExpenseService {
         return expenseMapper.toResponse(expenseRepository.save(expense));
     }
 
-    // The establishment never changes: the one in the request is ignored
+    // The establishment never changes: the one in the request is ignored. A cash expense can't leave a
+    // closed day, and an expense can't become a cash expense of a closed day
     @Override
     public ExpenseResponseDTO update(Long id, ExpenseRequestDTO request) {
-        Expense expense = getExpense(id);
+        Expense expense = lockAndGet(id);
+        Long establishmentId = expense.getEstablishment().getId();
+        if (expense.isCash()) {
+            checkCashDayOpen(establishmentId, expense.getDate());
+        }
+        if (request.paymentMethod() == PaymentMethod.CASH) {
+            checkCashDayOpen(establishmentId, request.date());
+        }
         checkNotInFuture(expense.getEstablishment(), request.date());
         expenseMapper.updateEntity(expense, request);
         return expenseMapper.toResponse(expense);
@@ -75,7 +97,19 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     public void delete(Long id) {
-        expenseRepository.delete(getExpense(id));
+        Expense expense = lockAndGet(id);
+        if (expense.isCash()) {
+            checkCashDayOpen(expense.getEstablishment().getId(), expense.getDate());
+        }
+        expenseRepository.delete(expense);
+    }
+
+    private void checkCashDayOpen(Long establishmentId, LocalDate date) {
+        if (cashClosingRepository.existsByEstablishment_IdAndBusinessDateAndStatus(establishmentId, date,
+                CashClosingStatus.CLOSED)) {
+            throw new BusinessRuleException("The cash closing of " + date + " is closed; reopen it to add, change"
+                    + " or delete cash expenses of that day");
+        }
     }
 
     // "Today" is the establishment's local date, so a venue in the Canaries can't enter tomorrow's expenses
@@ -85,7 +119,16 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
     }
 
-    private Expense getExpense(Long id) {
+    private Establishment lockEstablishment(Long establishmentId) {
+        return establishmentRepository.lockById(establishmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Establishment", establishmentId));
+    }
+
+    // Takes the establishment's lock before reading the expense, so the checks see any change committed meanwhile
+    private Expense lockAndGet(Long id) {
+        Long establishmentId = expenseRepository.findEstablishmentIdById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Expense", id));
+        lockEstablishment(establishmentId);
         return expenseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Expense", id));
     }

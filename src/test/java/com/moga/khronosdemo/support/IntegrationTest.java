@@ -11,6 +11,8 @@ import com.moga.khronosdemo.entities.WorkerShift;
 import com.moga.khronosdemo.entities.Zone;
 import com.moga.khronosdemo.entities.enums.Role;
 import com.moga.khronosdemo.entities.enums.TimeEntrySource;
+import com.moga.khronosdemo.repositories.CashClosingChangeRepository;
+import com.moga.khronosdemo.repositories.CashClosingRepository;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
 import com.moga.khronosdemo.repositories.ExpenseRepository;
@@ -106,6 +108,12 @@ public abstract class IntegrationTest {
 
     @Autowired
     protected ExpenseRepository expenseRepository;
+
+    @Autowired
+    protected CashClosingRepository cashClosingRepository;
+
+    @Autowired
+    protected CashClosingChangeRepository cashClosingChangeRepository;
 
     @Autowired
     protected PasswordEncoder passwordEncoder;
