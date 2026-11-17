@@ -1,6 +1,8 @@
 package com.moga.khronosdemo.services;
 
 import com.moga.khronosdemo.dtos.request.ProductRequestDTO;
+import com.moga.khronosdemo.dtos.request.StockCountItemRequestDTO;
+import com.moga.khronosdemo.dtos.request.StockCountRequestDTO;
 import com.moga.khronosdemo.dtos.request.StockMovementRequestDTO;
 import com.moga.khronosdemo.dtos.response.StockMovementResponseDTO;
 import com.moga.khronosdemo.entities.Establishment;
@@ -53,6 +55,9 @@ class StockMovementLockingTests extends IntegrationTest {
     private ProductService productService;
 
     @Autowired
+    private StockCountService stockCountService;
+
+    @Autowired
     private PlatformTransactionManager transactionManager;
 
     private final ExecutorService pool = Executors.newFixedThreadPool(4);
@@ -60,12 +65,13 @@ class StockMovementLockingTests extends IntegrationTest {
     private final CountDownLatch releaseFirst = new CountDownLatch(1);
 
     private User owner;
+    private Establishment venue;
     private Long rum;
 
     @BeforeEach
     void setUp() {
         owner = createOwner("owner");
-        Establishment venue = createEstablishment(owner);
+        venue = createEstablishment(owner);
         clock.setNow(Instant.parse("2030-05-10T12:00:00Z"));
         rum = productService.create(new ProductRequestDTO(venue.getId(), "Ron", ProductCategory.SPIRITS,
                 ProductUnit.BOTTLE, null, new BigDecimal("10"), null)).id();
@@ -123,6 +129,21 @@ class StockMovementLockingTests extends IntegrationTest {
         }
         assertEquals(expected, stockAfter);
         assertEquals(new BigDecimal("20.000"), productService.findById(rum).currentStock());
+    }
+
+    @Test
+    void aCountWaitsForAMovementBeingRecordedAndCountsAgainstTheStockItLeft() throws Exception {
+        holdOpen(() -> stockMovementService.create(movement(StockMovementType.PURCHASE, "6"), owner.getId()));
+
+        Future<List<StockMovementResponseDTO>> count = pool.submit(() -> stockCountService.count(
+                new StockCountRequestDTO(venue.getId(), null, null,
+                        List.of(new StockCountItemRequestDTO(rum, new BigDecimal("5")))), owner.getId()));
+        assertWaits(count);
+
+        releaseFirst.countDown();
+        StockMovementResponseDTO counted = count.get(10, TimeUnit.SECONDS).get(0);
+        assertEquals(new BigDecimal("-1.000"), counted.quantity());
+        assertEquals(new BigDecimal("5.000"), counted.stockAfter());
     }
 
     @Test
