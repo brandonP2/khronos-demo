@@ -14,8 +14,10 @@ public record CashClosingProperties(
 ) {
 
     public CashClosingProperties {
-        if (differenceThreshold == null || differenceThreshold.signum() < 0) {
-            throw new IllegalStateException("app.cash-closing.difference-threshold must be set and must not be negative");
+        if (differenceThreshold == null || differenceThreshold.signum() < 0
+                || differenceThreshold.stripTrailingZeros().scale() > 2) {
+            throw new IllegalStateException("app.cash-closing.difference-threshold must be set, must not be negative"
+                    + " and can have at most two decimals");
         }
     }
 }
