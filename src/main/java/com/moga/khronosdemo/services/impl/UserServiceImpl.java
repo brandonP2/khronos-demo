@@ -87,6 +87,12 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<UserResponseDTO> findByEstablishment(Long establishmentId) {
+        return userRepository.findWorkersOfEstablishment(establishmentId).stream().map(userMapper::toResponse).toList();
+    }
+
+    @Override
     public UserResponseDTO update(Long id, UserUpdateRequestDTO request) {
         User user = getUser(id);
         if (userRepository.existsByUsernameAndIdNot(request.username(), id)) {

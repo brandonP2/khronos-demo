@@ -125,6 +125,16 @@ public class WorkerEventServiceImpl implements WorkerEventService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<WorkerEventResponseDTO> findByEstablishment(Long establishmentId, LocalDate from, LocalDate to) {
+        DateRange range = new DateRange(from, to);
+        return workerEventRepository.findByEstablishment(establishmentId, range.startInclusive(), range.endExclusive())
+                .stream()
+                .map(workerEventMapper::toResponse)
+                .toList();
+    }
+
+    @Override
     public void delete(Long id) {
         WorkerEvent workerEvent = getWorkerEvent(id);
         eventPublisher.publishEvent(new EventUnassignedNotification(

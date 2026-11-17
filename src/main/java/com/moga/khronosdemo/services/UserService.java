@@ -19,6 +19,8 @@ public interface UserService {
 
     List<UserResponseDTO> findAll();
 
+    List<UserResponseDTO> findByEstablishment(Long establishmentId);
+
     UserResponseDTO update(Long id, UserUpdateRequestDTO request);
 
     void changePassword(Long id, ChangePasswordRequestDTO request);

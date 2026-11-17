@@ -53,6 +53,13 @@ public class UserController {
         return userService.findAll();
     }
 
+    // The accounts of everyone who works at the establishment, instead of one request per worker
+    @GetMapping("/establishment/{establishmentId}")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsEstablishment(#establishmentId)")
+    public List<UserResponseDTO> findByEstablishment(@PathVariable Long establishmentId) {
+        return userService.findByEstablishment(establishmentId);
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.isSelf(#id) or @access.ownsWorker(#id)")
     public UserResponseDTO findById(@PathVariable Long id) {

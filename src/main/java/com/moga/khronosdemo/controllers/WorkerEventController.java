@@ -5,10 +5,12 @@ import com.moga.khronosdemo.dtos.response.WorkerEventResponseDTO;
 import com.moga.khronosdemo.services.WorkerEventService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -38,6 +40,15 @@ public class WorkerEventController {
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.memberOfEvent(#eventId)")
     public List<WorkerEventResponseDTO> findByEvent(@PathVariable Long eventId) {
         return workerEventService.findByEvent(eventId);
+    }
+
+    // Every assignment of the establishment's events in one request, instead of one per event
+    @GetMapping("/establishment/{establishmentId}")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.memberOfEstablishment(#establishmentId)")
+    public List<WorkerEventResponseDTO> findByEstablishment(@PathVariable Long establishmentId,
+                                                           @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                                           @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return workerEventService.findByEstablishment(establishmentId, from, to);
     }
 
     @GetMapping("/{id}")
