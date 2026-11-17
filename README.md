@@ -58,6 +58,8 @@ Clients sign in once and then send a short-lived token with every request.
    ```
 3. Every other request sends `Authorization: Bearer <accessToken>`.
 
+A wrong password answers **401** "Invalid username or password", whether the account exists, is active or is disabled. Only the right password for a disabled account answers **401** "This account is disabled", so the login reveals nothing about an account to someone who doesn't know its password.
+
 The token is a JWT signed with HS256. It holds only the user id (`sub`), the role, and the `iat` and `exp` times. **It expires one hour after login.** After that the API answers **401** and the client has to sign in again. There is no refresh token in this beta, so sessions stop at the one-hour mark.
 
 The user is reloaded from the database on every request, so some changes take effect before the token expires:

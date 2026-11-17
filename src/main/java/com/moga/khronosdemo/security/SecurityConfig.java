@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AccountStatusUserDetailsChecker;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -42,6 +43,10 @@ public class SecurityConfig {
                                                        PasswordEncoder passwordEncoder) {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
         provider.setPasswordEncoder(passwordEncoder);
+        // The account status is checked only once the password matches, so a wrong password gets the
+        // same answer whether the account is active, disabled or missing, and reveals nothing about it
+        provider.setPreAuthenticationChecks(user -> { });
+        provider.setPostAuthenticationChecks(new AccountStatusUserDetailsChecker());
         return new ProviderManager(provider);
     }
 

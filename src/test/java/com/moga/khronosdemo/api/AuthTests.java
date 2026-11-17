@@ -9,8 +9,11 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.util.Map;
+
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.startsWith;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -59,13 +62,41 @@ class AuthTests extends IntegrationTest {
 
     @Test
     void aDeactivatedWorkerCannotSignIn() throws Exception {
-        Worker worker = createWorker(createEstablishment(createOwner("owner")), "lucia");
-        worker.setActive(false);
-        workerRepository.save(worker);
+        deactivatedWorker("lucia");
 
         login("lucia", PASSWORD, "198.51.100.3")
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("This account is disabled"));
+    }
+
+    @Test
+    void aWrongPasswordDoesNotRevealThatAnAccountIsDeactivated() throws Exception {
+        deactivatedWorker("lucia");
+        createOwner("ana");
+        String ip = "198.51.100.4";
+
+        Map<String, Object> deactivated = bodyWithoutTimestamp(login("lucia", "wrong-password", ip)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Invalid username or password")));
+        Map<String, Object> active = bodyWithoutTimestamp(login("ana", "wrong-password", ip)
+                .andExpect(status().isUnauthorized()));
+        Map<String, Object> unknown = bodyWithoutTimestamp(login("nobody", "wrong-password", ip)
+                .andExpect(status().isUnauthorized()));
+
+        assertEquals(active, deactivated);
+        assertEquals(unknown, deactivated);
+    }
+
+    @Test
+    void failedSignInsAgainstADeactivatedAccountCountTowardsTheLimit() throws Exception {
+        deactivatedWorker("lucia");
+        String ip = "198.51.100.5";
+
+        for (int i = 0; i < 5; i++) {
+            login("lucia", "wrong-password", ip).andExpect(status().isUnauthorized());
+        }
+
+        login("lucia", PASSWORD, ip).andExpect(status().isTooManyRequests());
     }
 
     @Test
@@ -131,6 +162,18 @@ class AuthTests extends IntegrationTest {
             login("forgetful", "wrong-password", ip).andExpect(status().isUnauthorized());
         }
         login("forgetful", PASSWORD, ip).andExpect(status().isOk());
+    }
+
+    private void deactivatedWorker(String username) {
+        Worker worker = createWorker(createEstablishment(createOwner(uniqueName("owner"))), username);
+        worker.setActive(false);
+        workerRepository.save(worker);
+    }
+
+    private static Map<String, Object> bodyWithoutTimestamp(ResultActions result) throws Exception {
+        Map<String, Object> body = JsonPath.read(result.andReturn().getResponse().getContentAsString(), "$");
+        body.remove("timestamp");
+        return body;
     }
 
     private ResultActions login(String username, String password, String ip) throws Exception {
