@@ -169,22 +169,24 @@ Each entry has a `status`: `OPEN` (no clock-out yet), `CLOSED` or `VOIDED`. `wor
 | Request | When it answers 409 |
 |---|---|
 | Clock in | `You already have an open time entry`, `Worker is not active` (an inactive worker can't sign in, so in practice they get 401), `The time entry overlaps another time entry of this worker` |
-| Clock out | `You have no open time entry`, `This time entry has been open for more than 24 hours; ask a manager to correct it`, `The break cannot be longer than the time between clock-in and clock-out` |
+| Clock out | `You have no open time entry`, `This time entry has been open for more than 24 hours; ask a manager to correct it`, `The break cannot be longer than the time between clock-in and clock-out`, `The saved break is longer than the time since clock-in; send breakMinutes with the clock-out` (see below) |
+
+A clock-out without `breakMinutes` keeps the entry's break. An open entry's break can never be longer than the time since its clock-in (see [Corrections and history](#corrections-and-history)), so the kept break always fits. Only an open entry saved before that rule can have a longer one; its clock-out without `breakMinutes` answers **409** `The saved break is longer than the time since clock-in; send breakMinutes with the clock-out`, the entry stays open, and the same request with `breakMinutes` closes it.
 
 ### Corrections and history
 
 The establishment's owner or an admin can:
 
-- enter an entry for a worker with `POST /api/time-entries`: without `clockOut` it clocks them in now, with it it records a past shift (`source` is `MANAGER`);
+- enter an entry for a worker with `POST /api/time-entries`: without `clockOut` it clocks them in now, with it it records a past shift (`source` is `MANAGER`). An entry left open can't have a `breakMinutes` longer than the time since its clock-in, so that clocking it out later without a break never fails; the same goes for a correction that leaves the entry open;
 - clock a worker out with `POST /api/time-entries/{id}/clock-out`, for example when they left without doing it. As when the worker does it, the clock-out is the server's time; `breakMinutes` (0 to 600) is optional and, when left out, the entry keeps its break. The entry keeps its `source` and `isEdited` stays false, because no time was changed;
 - correct an entry with `PUT /api/time-entries/{id}`, which sets `isEdited` and matches it to a shift again;
 - void it with `PUT /api/time-entries/{id}/void`. A voided entry stays, but listings leave it out unless `includeVoided=true`, and reports never count it.
 
 Each of these needs a `reason` of 3 to 255 characters. Entries are never deleted through the API. Every creation, clock-out, correction and void adds a row to the entry's history (`GET /api/time-entries/{id}/history`, oldest first) with the action, who did it, when, the reason, and the clock-in, clock-out and break the entry had right after. A clock-out by the owner is a `CLOCKED_OUT` row with the owner as the author and their reason. History rows can't be changed: a database trigger rejects updates.
 
-A clock-out by the owner answers **409** with `The time entry is already clocked out`, `A voided time entry cannot be clocked out`, `The break cannot be longer than the time between clock-in and clock-out` or, for an entry open for more than 24 hours, `This time entry has been open for more than 24 hours; correct it with PUT /api/time-entries/{id} and the real clock-out time` (with the entry's id).
+A clock-out by the owner answers **409** with `The time entry is already clocked out`, `A voided time entry cannot be clocked out`, `The break cannot be longer than the time between clock-in and clock-out`, `The saved break is longer than the time since clock-in; send breakMinutes with the clock-out` or, for an entry open for more than 24 hours, `This time entry has been open for more than 24 hours; correct it with PUT /api/time-entries/{id} and the real clock-out time` (with the entry's id).
 
-Manual entries and corrections answer **409** with one of: `Clock-in cannot be in the future`, `Clock-out cannot be in the future` (both allow one minute of clock difference), `Clock-out must be after clock-in`, `A time entry cannot last more than 24 hours`, `The break cannot be longer than the time between clock-in and clock-out`, `The time entry overlaps another time entry of this worker` (voided entries don't count), `A voided time entry cannot be corrected` and `The time entry is already voided`. An owner can enter past days for an inactive worker.
+Manual entries and corrections answer **409** with one of: `Clock-in cannot be in the future`, `Clock-out cannot be in the future` (both allow one minute of clock difference), `Clock-out must be after clock-in`, `A time entry cannot last more than 24 hours`, `The break cannot be longer than the time between clock-in and clock-out`, `The break cannot be longer than the time since clock-in` (an entry without `clockOut`), `The time entry overlaps another time entry of this worker` (voided entries don't count), `A voided time entry cannot be corrected` and `The time entry is already voided`. An owner can enter past days for an inactive worker.
 
 ### What deleting does to time entries
 

@@ -1,6 +1,7 @@
 package com.moga.khronosdemo.api;
 
 import com.moga.khronosdemo.entities.Establishment;
+import com.moga.khronosdemo.entities.TimeEntry;
 import com.moga.khronosdemo.entities.User;
 import com.moga.khronosdemo.entities.Worker;
 import com.moga.khronosdemo.support.IntegrationTest;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
@@ -24,6 +26,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * is kept in the entry's history.
  */
 class TimeEntryManagementTests extends IntegrationTest {
+
+    private static final String SAVED_BREAK_TOO_LONG =
+            "The saved break is longer than the time since clock-in; send breakMinutes with the clock-out";
 
     private User owner;
     private Establishment venue;
@@ -103,6 +108,51 @@ class TimeEntryManagementTests extends IntegrationTest {
                 "The break cannot be longer than the time between clock-in and clock-out");
 
         assertEquals(1, timeEntryRepository.count());
+    }
+
+    @Test
+    void anOpenEntryCannotHaveABreakLongerThanTheTimeSinceItsClockIn() throws Exception {
+        // It is 12:00: an entry clocked in at 11:30 can have at most 30 minutes of break so far
+        expectConflict("2030-05-10T11:30:00Z", null, 31, "The break cannot be longer than the time since clock-in");
+        Long id = longAt(mockMvc.perform(postJson("/api/time-entries", """
+                        { "workerId": %d, "clockIn": "2030-05-10T11:30:00Z", "breakMinutes": 30,
+                          "reason": "Phone battery is dead" }
+                        """.formatted(worker.getUserId())).with(as(owner)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andReturn(), "$.id");
+        mockMvc.perform(putJson("/api/time-entries/{id}", """
+                        { "clockIn": "2030-05-10T11:45:00Z", "clockOut": null, "breakMinutes": 30, "reason": "Came later" }
+                        """, id).with(as(owner)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("The break cannot be longer than the time since clock-in"));
+
+        // Later, a clock-out without a break keeps the 30 minutes, which still fit
+        clock.setNow(Instant.parse("2030-05-10T13:30:00Z"));
+        mockMvc.perform(post("/api/time-entries/clock-out").with(as(worker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.breakMinutes").value(30))
+                .andExpect(jsonPath("$.workedMinutes").value(90));
+        assertEquals(1, timeEntryRepository.count());
+    }
+
+    @Test
+    void aClockOutThatWouldKeepAnImpossibleSavedBreakAsksForTheBreak() throws Exception {
+        // Saved before the rule above: open since 11:30 with a 45 minute break, and it is 12:00
+        TimeEntry entry = createTimeEntry(worker, null, LocalDate.of(2030, 5, 10), "2030-05-10T11:30:00Z", null, 45);
+
+        mockMvc.perform(post("/api/time-entries/clock-out").with(as(worker)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(SAVED_BREAK_TOO_LONG));
+        expectClockOutConflict(entry.getId(), "{ \"reason\": \"Left early\" }", SAVED_BREAK_TOO_LONG);
+
+        // Still open, and closed once the real break is given
+        mockMvc.perform(postJson("/api/time-entries/clock-out", """
+                        { "breakMinutes": 10 }
+                        """).with(as(worker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.breakMinutes").value(10))
+                .andExpect(jsonPath("$.workedMinutes").value(20));
     }
 
     @Test

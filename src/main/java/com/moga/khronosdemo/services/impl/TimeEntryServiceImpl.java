@@ -218,10 +218,17 @@ public class TimeEntryServiceImpl implements TimeEntryService {
 
     // Clocks an open entry out at the server's time. A null break keeps the entry's current one. No entry
     // lasts more than 24 hours, so past that it has to be corrected with the real clock-out time instead.
+    // checkTimes keeps an open entry's break within the time since its clock-in, so a kept break fits; an
+    // entry saved before that rule may still have a longer one, and then the clock-out has to give the
+    // real break instead of failing on a break nobody sent.
     private void closeNow(TimeEntry entry, Integer breakMinutes, String tooLongMessage) {
         Instant now = now();
         if (Duration.between(entry.getClockIn(), now).compareTo(MAX_DURATION) > 0) {
             throw new BusinessRuleException(tooLongMessage);
+        }
+        if (breakMinutes == null && entry.getBreakMinutes() > Duration.between(entry.getClockIn(), now).toMinutes()) {
+            throw new BusinessRuleException("The saved break is longer than the time since clock-in;"
+                    + " send breakMinutes with the clock-out");
         }
         int breakToKeep = breakMinutes != null ? breakMinutes : entry.getBreakMinutes();
         checkTimes(entry.getClockIn(), now, breakToKeep);
@@ -230,13 +237,18 @@ public class TimeEntryServiceImpl implements TimeEntryService {
         entry.setBreakMinutes(breakToKeep);
     }
 
-    // Rules shared by clock-out, manual entries and corrections. clockOut is null for an open entry.
+    // Rules shared by clock-out, manual entries and corrections. clockOut is null for an open entry, whose
+    // break cannot be longer than the time since its clock-in so far. That time only grows, so a clock-out
+    // that keeps the break, without sending one, always fits it.
     private void checkTimes(Instant clockIn, Instant clockOut, int breakMinutes) {
         Instant latest = clock.instant().plus(CLOCK_SKEW);
         if (clockIn.isAfter(latest)) {
             throw new BusinessRuleException("Clock-in cannot be in the future");
         }
         if (clockOut == null) {
+            if (breakMinutes > Duration.between(clockIn, now()).toMinutes()) {
+                throw new BusinessRuleException("The break cannot be longer than the time since clock-in");
+            }
             return;
         }
         if (!clockOut.isAfter(clockIn)) {
