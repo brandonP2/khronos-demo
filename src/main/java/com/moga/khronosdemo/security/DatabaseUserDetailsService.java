@@ -10,6 +10,8 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
 @Service
 public class DatabaseUserDetailsService implements UserDetailsService {
 
@@ -26,6 +28,15 @@ public class DatabaseUserDetailsService implements UserDetailsService {
     public UserDetails loadUserByUsername(String username) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        return toSecurityUser(user);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<SecurityUser> loadUserById(Long id) {
+        return userRepository.findById(id).map(this::toSecurityUser);
+    }
+
+    private SecurityUser toSecurityUser(User user) {
         boolean enabled = workerRepository.findById(user.getId())
                 .map(Worker::getActive)
                 .orElse(true);

@@ -11,7 +11,7 @@ The API stops scheduling mistakes before they are saved. For example, it won't l
 | Language | Java 17 |
 | Framework | Spring Boot 4 (Web MVC, Data JPA, Validation, Security) |
 | Database | Supabase |
-| Auth | HTTP Basic, stateless |
+| Auth | JWT bearer tokens (HS256), valid for 1 hour, stateless |
 | Email | Resend |
 | Docs | springdoc OpenAPI / Swagger UI |
 | Build | Maven (wrapper included) |
@@ -44,6 +44,36 @@ Deleting a parent also deletes everything under it. For example, deleting an est
 | `WORKER` | Can read their own profile, shifts and event assignments, and see the zones and events of the establishment they work at. They can change their own password. |
 
 Each endpoint checks access with `@PreAuthorize` rules backed by `AccessGuard`. A request for data that belongs to another owner returns **403**.
+
+## Authentication
+
+Clients sign in once and then send a short-lived token with every request.
+
+1. `POST /api/auth/login` with `{ "username": "...", "password": "..." }`. This is the only endpoint that accepts a password.
+2. The response holds the token and when it expires:
+   ```json
+   { "accessToken": "eyJ...", "tokenType": "Bearer", "expiresAt": "2026-11-17T15:42:00Z", "expiresIn": 3600 }
+   ```
+3. Every other request sends `Authorization: Bearer <accessToken>`.
+
+The token is a JWT signed with HS256. It holds only the user id (`sub`), the role, and the `iat` and `exp` times. **It expires one hour after login.** After that the API answers **401** and the client has to sign in again. There is no refresh token in this beta, so sessions stop at the one-hour mark.
+
+The user is reloaded from the database on every request, so some changes take effect before the token expires:
+
+| Change | Effect on existing tokens |
+|---|---|
+| A worker is deactivated | Rejected immediately with **401** "This account is disabled" |
+| The user is deleted | Rejected immediately |
+| The role or username changes | The token keeps working with the new values, because it identifies the user by id |
+
+HTTP Basic is no longer accepted. If it were, anyone holding a password could skip the one-hour limit.
+
+| Setting | Environment variable | Default |
+|---|---|---|
+| Signing secret (at least 32 bytes) | `JWT_SECRET` | none, the app refuses to start without it |
+| Token lifetime (ISO-8601 duration) | `JWT_TTL` | `PT1H` |
+
+Generate a secret with `openssl rand -base64 48`. Keep it out of version control. Changing it signs everyone out.
 
 ## Business rules
 
@@ -96,10 +126,11 @@ Resend is configured with `RESEND_API_KEY` (required) and `RESEND_FROM` (optiona
 
 ## API overview
 
-All endpoints are under `/api` and require authentication. The full interactive reference is in Swagger UI (see [Running locally](#running-locally)).
+All endpoints are under `/api` and need a bearer token, except `POST /api/auth/login`. The full interactive reference is in Swagger UI (see [Running locally](#running-locally)).
 
 | Resource | Base path | Notes |
 |---|---|---|
+| Auth | `/api/auth` | `POST /login` returns a token valid for one hour. |
 | Users | `/api/users` | `GET /me` returns the logged-in user. `POST /create?role=...` is for admins only. `POST /create/worker` creates a user with the `WORKER` role. `PUT /{id}/password` changes the password. |
 | Establishments | `/api/establishments` | You can also list them by owner: `/owner/{ownerId}`. |
 | Zones | `/api/zones` | You can also list them by establishment: `/establishment/{id}`. |
@@ -110,6 +141,7 @@ All endpoints are under `/api` and require authentication. The full interactive 
 
 ### Typical flow
 
+0. Each user signs in with `POST /api/auth/login` and sends the returned token as `Authorization: Bearer ...` on the calls below.
 1. An admin creates a user with the `OWNER` role (`POST /api/users/create?role=OWNER`) and an establishment for them (`POST /api/establishments`).
 2. The owner creates zones (`POST /api/zones`).
 3. The owner creates worker accounts (`POST /api/users/create/worker`) and links them to the establishment (`POST /api/workers`).
@@ -158,12 +190,27 @@ Every error comes back in the same shape:
 | Status | When |
 |---|---|
 | 400 | Validation failed, or the JSON, a parameter or a date/time format is invalid |
-| 401 | Credentials are missing or wrong |
+| 401 | Wrong username or password at login, or the token is missing, expired, revoked or belongs to a disabled account |
 | 403 | You aren't allowed to access the resource |
 | 404 | The resource or endpoint doesn't exist |
 | 409 | A business rule was broken, or the data conflicts with existing records |
 
+## Running locally
+
+Create a `.env` file in the project root:
+
+```properties
+DB_URL=jdbc:postgresql://...
+DB_USERNAME=...
+DB_PASSWORD=...
+RESEND_API_KEY=...
+JWT_SECRET=<output of: openssl rand -base64 48>
+```
+
+Then run `mvn spring-boot:run`, or start `KhronosDemoApplication` from your IDE. Swagger UI is at http://localhost:8080/swagger-ui.html: call `POST /api/auth/login`, then paste the `accessToken` into **Authorize**.
+
 Hibernate creates and updates the tables on startup (`ddl-auto=update`).
+
 ## Project structure
 
 ```
@@ -176,6 +223,6 @@ src/main/java/com/moga/khronosdemo
 ├── notifications/ Notification events and the listener that emails workers
 ├── mappers/       Conversions between entities and DTOs
 ├── repositories/  Spring Data JPA repositories, including the overlap and coverage queries
-├── security/      SecurityConfig, AccessGuard and the user-details service
+├── security/      SecurityConfig, AccessGuard, the user-details service and JWT issuing and checking
 └── services/      Service interfaces and their implementations (business rules)
 ```

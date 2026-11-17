@@ -12,6 +12,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.validation.method.ParameterErrors;
 import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -94,6 +95,8 @@ public class GlobalExceptionHandler {
         String message;
         if (ex instanceof DisabledException) {
             message = "This account is disabled";
+        } else if (ex instanceof OAuth2AuthenticationException) {
+            message = "Your session has expired or is no longer valid. Sign in again";
         } else if (ex instanceof InsufficientAuthenticationException) {
             message = "Authentication is required to access this resource";
         } else {
