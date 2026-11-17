@@ -81,4 +81,42 @@ class ApiDocsTests extends IntegrationTest {
                 // The author is taken from the token
                 .andExpect(jsonPath("$.paths['/api/cash-closings'].post.parameters").doesNotExist());
     }
+
+    @Test
+    void documentsTheInventory() throws Exception {
+        mockMvc.perform(getJson("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/suppliers'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/suppliers/{id}'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/suppliers/{id}'].delete").exists())
+                .andExpect(jsonPath("$.paths['/api/suppliers/establishment/{establishmentId}'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/products'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/products/{id}'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/products/{id}'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/products/{id}'].delete").exists())
+                .andExpect(jsonPath("$.paths['/api/products/{id}/active'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/products/establishment/{establishmentId}'].get.parameters[*].name",
+                        contains("establishmentId", "includeInactive")))
+                .andExpect(jsonPath("$.paths['/api/stock-movements'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/stock-movements/establishment/{establishmentId}'].get.parameters[*].name",
+                        contains("establishmentId", "from", "to", "productId", "type")))
+                // Movements are never changed or deleted
+                .andExpect(jsonPath("$.paths['/api/stock-movements/{id}']").doesNotExist())
+                .andExpect(jsonPath("$.paths['/api/stock-counts'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/purchase-orders'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/purchase-orders/{id}'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/purchase-orders/{id}'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/purchase-orders/{id}'].delete").exists())
+                .andExpect(jsonPath("$.paths['/api/purchase-orders/{id}/order'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/purchase-orders/{id}/cancel'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/purchase-orders/{id}/receive'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/purchase-orders/establishment/{establishmentId}'].get.parameters[*].name",
+                        contains("establishmentId", "status", "from", "to")))
+                .andExpect(jsonPath("$.paths['/api/reports/establishment/{establishmentId}/inventory'].get.parameters[*].name",
+                        contains("establishmentId", "from", "to")))
+                .andExpect(jsonPath("$.paths['/api/reports/establishment/{establishmentId}/inventory.csv'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/reports/establishment/{establishmentId}/stock-movements.csv'].get").exists())
+                // The author is taken from the token
+                .andExpect(jsonPath("$.paths['/api/stock-movements'].post.parameters").doesNotExist());
+    }
 }
