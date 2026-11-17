@@ -5,6 +5,7 @@ import com.moga.khronosdemo.repositories.CashClosingRepository;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
 import com.moga.khronosdemo.repositories.ExpenseRepository;
+import com.moga.khronosdemo.repositories.SupplierRepository;
 import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.repositories.WorkerEventRepository;
@@ -32,12 +33,14 @@ public class AccessGuard {
     private final TimeEntryRepository timeEntryRepository;
     private final ExpenseRepository expenseRepository;
     private final CashClosingRepository cashClosingRepository;
+    private final SupplierRepository supplierRepository;
 
     public AccessGuard(EstablishmentRepository establishmentRepository, ZoneRepository zoneRepository,
                        EventRepository eventRepository, WorkerRepository workerRepository,
                        WorkerShiftRepository workerShiftRepository, WorkerEventRepository workerEventRepository,
                        UserRepository userRepository, TimeEntryRepository timeEntryRepository,
-                       ExpenseRepository expenseRepository, CashClosingRepository cashClosingRepository) {
+                       ExpenseRepository expenseRepository, CashClosingRepository cashClosingRepository,
+                       SupplierRepository supplierRepository) {
         this.establishmentRepository = establishmentRepository;
         this.zoneRepository = zoneRepository;
         this.eventRepository = eventRepository;
@@ -48,6 +51,7 @@ public class AccessGuard {
         this.timeEntryRepository = timeEntryRepository;
         this.expenseRepository = expenseRepository;
         this.cashClosingRepository = cashClosingRepository;
+        this.supplierRepository = supplierRepository;
     }
 
     public Long currentUserId() {
@@ -192,6 +196,13 @@ public class AccessGuard {
     // A closing belongs to the establishment it was created for, which never changes
     public boolean ownsCashClosing(Long cashClosingId) {
         return cashClosingId != null && cashClosingRepository.findEstablishmentIdById(cashClosingId)
+                .map(this::ownsEstablishment)
+                .orElse(false);
+    }
+
+    // A supplier belongs to the establishment it was created for, which never changes
+    public boolean ownsSupplier(Long supplierId) {
+        return supplierId != null && supplierRepository.findEstablishmentIdById(supplierId)
                 .map(this::ownsEstablishment)
                 .orElse(false);
     }
