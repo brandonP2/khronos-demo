@@ -11,6 +11,7 @@ import com.moga.khronosdemo.exceptions.BusinessRuleException;
 import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.mappers.UserMapper;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
+import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.repositories.WorkerRepository;
 import com.moga.khronosdemo.services.UserService;
@@ -28,15 +29,17 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final WorkerRepository workerRepository;
     private final EstablishmentRepository establishmentRepository;
+    private final TimeEntryRepository timeEntryRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
 
     public UserServiceImpl(UserRepository userRepository, WorkerRepository workerRepository,
-                           EstablishmentRepository establishmentRepository, UserMapper userMapper,
-                           PasswordEncoder passwordEncoder) {
+                           EstablishmentRepository establishmentRepository, TimeEntryRepository timeEntryRepository,
+                           UserMapper userMapper, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.workerRepository = workerRepository;
         this.establishmentRepository = establishmentRepository;
+        this.timeEntryRepository = timeEntryRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
     }
@@ -131,6 +134,9 @@ public class UserServiceImpl implements UserService {
         user.setCredentialsChangedAt(Instant.now());
     }
 
+    // Deleting an owner deletes their establishments, and deleting a worker's account deletes the worker,
+    // so neither is allowed while it would take time entries with it. The author of a change can be
+    // deleted: the change keeps their name.
     @Override
     public void delete(Long id) {
 
@@ -140,11 +146,22 @@ public class UserServiceImpl implements UserService {
         }
 
         if (user.getRole() == Role.OWNER) {
+            if (timeEntryRepository.existsByEstablishment_Owner_Id(id)) {
+                throw new BusinessRuleException("Cannot delete an owner whose establishments have time entries;"
+                        + " deactivate their workers instead to keep the time entries");
+            }
             establishmentRepository.deleteAll(establishmentRepository.findByOwner_Id(id));
         }
 
         workerRepository.findById(id).ifPresentOrElse(
-                workerRepository::delete,
+                worker -> {
+                    if (timeEntryRepository.existsByWorker_UserId(id)) {
+                        throw new BusinessRuleException("Cannot delete the account of a worker who has time entries;"
+                                + " deactivate the worker instead (PUT /api/workers/" + id + "/active) to keep"
+                                + " their time entries");
+                    }
+                    workerRepository.delete(worker);
+                },
                 () -> userRepository.delete(user)
         );
 

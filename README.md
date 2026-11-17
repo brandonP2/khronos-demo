@@ -40,7 +40,7 @@ Besides what was planned, Khronos records what actually happened: workers clock 
 | **TimeEntry** | A clock-in and its clock-out, as recorded. Never deleted through the API, only corrected or voided. |
 | **TimeEntryChange** | One row of a time entry's history: who did what, when, why, and the times it left. Rows are never changed. |
 
-Deleting a parent also deletes everything under it. For example, deleting an establishment removes its zones, workers, shifts and events. Time entries are the exception for shifts: see [What deleting does to time entries](#what-deleting-does-to-time-entries).
+Deleting a parent also deletes everything under it. For example, deleting an establishment removes its zones, workers, shifts and events. Time entries are the exception: nothing that has them can be deleted, and deleting a shift keeps them. See [What deleting does to time entries](#what-deleting-does-to-time-entries).
 
 ## Roles and permissions
 
@@ -104,17 +104,20 @@ These rules are enforced in the service layer. Breaking one returns **409 Confli
 - To change a password, the user must send their current password.
 - A platform admin can reset the password of any user except another platform admin, and an owner can reset the password of their own workers, without the current password.
 - A platform admin can't be deleted through the API.
+- An owner can't be deleted while any of their establishments has time entries, and a worker's account can't be deleted while the worker has time entries. See [What deleting does to time entries](#what-deleting-does-to-time-entries).
 
 **Establishments and zones**
 - Two establishments can't share an address.
 - An establishment's owner must have the `OWNER` role.
 - A zone can't be moved to another establishment.
+- An establishment with time entries can't be deleted.
 
 **Workers**
 - Only users with the `WORKER` role can be registered as workers, and each user only once.
 - An owner can only link an account they created themselves; otherwise the request gets **403**. Accounts created before this rule existed have no recorded creator, so only a platform admin can link them.
 - A worker can't move to another establishment while they still have shifts, events or time entries.
 - An inactive worker can't sign in, get new shifts or be assigned to events.
+- A worker with time entries can't be deleted; deactivate them instead.
 
 **Shifts**
 - A shift whose end time is not after its start time ends on the next day: 18:00 to 02:00 is an 8-hour night shift. See [Night shifts and the business day](#night-shifts-and-the-business-day).
@@ -184,7 +187,14 @@ Manual entries and corrections answer **409** with one of: `Clock-in cannot be i
 ### What deleting does to time entries
 
 - **A shift**: its entries stay. They lose the link (`shiftId` becomes null) and keep their business day. Editing a shift so that an entry no longer fits it (another worker, or a clock-in outside the new window) unlinks that entry the same way; entries that still fit follow the shift's date.
-- **A worker, or an establishment** (which deletes its workers): their entries, the entries' history and the worker's rates are deleted with them. Only a platform admin can do either. **To keep a worker's records, deactivate them** (`PUT /api/workers/{id}/active`) instead of deleting them.
+- **A worker, their account, an establishment or its owner**: refused with **409** while there are time entries that the delete would take with it, voided ones included. Deleting an establishment deletes its workers, and deleting an owner deletes their establishments, so those count too. **Deactivate the worker instead** (`PUT /api/workers/{id}/active`): they can't sign in or be scheduled, and their entries, history and rates stay. The database refuses these deletes as well (`ON DELETE RESTRICT` on the entries' worker and establishment and on the history's entry), so they can't happen outside the API either. Without time entries, the delete works as before: a worker goes with their account, shifts, assignments and rates.
+
+  | Request | Message of the 409 |
+  |---|---|
+  | `DELETE /api/workers/{id}` | `Cannot delete a worker who has time entries; deactivate them instead (PUT /api/workers/{id}/active) to keep their time entries` |
+  | `DELETE /api/users/{id}` of a worker | `Cannot delete the account of a worker who has time entries; deactivate the worker instead (PUT /api/workers/{id}/active) to keep their time entries` |
+  | `DELETE /api/users/{id}` of an owner | `Cannot delete an owner whose establishments have time entries; deactivate their workers instead to keep the time entries` |
+  | `DELETE /api/establishments/{id}` | `Cannot delete an establishment that has time entries; deactivate its workers instead to keep the time entries` |
 - **The account that made a change**: the change stays, with the author's name; only the link to the account is cleared.
 
 ### Hourly rates
@@ -217,7 +227,6 @@ The files open directly in a spreadsheet set to Spanish: UTF-8 with a byte order
 ### Known limits
 
 - The database doesn't stop overlapping shifts by itself. An exclusion constraint on `(worker_id, tsrange(starts_at, ends_at))` would, but adding it would make the migration fail on a database that already holds overlapping shifts written before the per-worker lock existed. The service check under that lock covers every request that goes through the API.
-- Deleting a worker or an establishment deletes their time entries (see above).
 - This is a record of what workers and owners entered. It is not certified as meeting any particular legal requirement for working-time records.
 
 ## Email notifications
@@ -412,7 +421,8 @@ Flyway owns the schema. The scripts are in `src/main/resources/db/migration` and
 - `V1__baseline.sql` is the schema that `ddl-auto=update` used to create.
 - On a database that already has those tables but no Flyway history (for example the Supabase database), the first start marks V1 as applied without running it, keeps the data, and runs only V2 onwards (`baseline-on-migrate`). `V2` adds the pieces an older database might be missing.
 - `V4` to `V7` add the establishment's time zone (existing ones get `Europe/Madrid`), the generated interval columns of shifts, hourly rates, and time entries with their history. They only add columns, tables, indexes and a trigger, so they run on a database that already has data.
-- Any schema change goes in a new script, `V8__what_it_does.sql`, `V9__...`. Never edit a script that has already run anywhere.
+- `V8` changes the time entries' foreign keys to their worker and establishment, and the history's to its entry, from `ON DELETE CASCADE` to `ON DELETE RESTRICT`. Only the delete action changes, so the existing rows already meet the new constraints.
+- Any schema change goes in a new script, `V9__what_it_does.sql`, `V10__...`. Never edit a script that has already run anywhere.
 
 ### Tests
 

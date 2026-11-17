@@ -9,6 +9,7 @@ import com.moga.khronosdemo.exceptions.BusinessRuleException;
 import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.mappers.EstablishmentMapper;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
+import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.services.EstablishmentService;
 import org.springframework.stereotype.Service;
@@ -22,12 +23,14 @@ public class EstablishmentServiceImpl implements EstablishmentService {
 
     private final EstablishmentRepository establishmentRepository;
     private final UserRepository userRepository;
+    private final TimeEntryRepository timeEntryRepository;
     private final EstablishmentMapper establishmentMapper;
 
     public EstablishmentServiceImpl(EstablishmentRepository establishmentRepository, UserRepository userRepository,
-                                    EstablishmentMapper establishmentMapper) {
+                                    TimeEntryRepository timeEntryRepository, EstablishmentMapper establishmentMapper) {
         this.establishmentRepository = establishmentRepository;
         this.userRepository = userRepository;
+        this.timeEntryRepository = timeEntryRepository;
         this.establishmentMapper = establishmentMapper;
     }
 
@@ -73,9 +76,15 @@ public class EstablishmentServiceImpl implements EstablishmentService {
 
     }
 
+    // Deleting an establishment deletes its workers, so it is not allowed while it has time entries
     @Override
     public void delete(Long id) {
-        establishmentRepository.delete(getEstablishment(id));
+        Establishment establishment = getEstablishment(id);
+        if (timeEntryRepository.existsByEstablishment_Id(id)) {
+            throw new BusinessRuleException("Cannot delete an establishment that has time entries;"
+                    + " deactivate its workers instead to keep the time entries");
+        }
+        establishmentRepository.delete(establishment);
     }
 
     private Establishment getEstablishment(Long id) {

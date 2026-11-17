@@ -22,15 +22,16 @@ public class TimeEntry {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
 
-    // Deleting the worker (or their establishment) deletes their entries in the database
+    // The database refuses to delete a worker or an establishment that has entries (see V8), and so
+    // does the service, with a 409 that suggests deactivating the worker instead
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "worker_id", nullable = false)
-    @OnDelete(action = OnDeleteAction.CASCADE)
+    @OnDelete(action = OnDeleteAction.RESTRICT)
     private Worker worker;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "establishment_id", nullable = false)
-    @OnDelete(action = OnDeleteAction.CASCADE)
+    @OnDelete(action = OnDeleteAction.RESTRICT)
     private Establishment establishment;
 
     // The planned shift the clock-in was matched to. Deleting the shift keeps the entry and clears the link

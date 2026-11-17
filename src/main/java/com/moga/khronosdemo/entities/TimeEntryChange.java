@@ -22,9 +22,10 @@ public class TimeEntryChange {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
 
+    // An entry with history cannot be deleted, not even in the database (see V8)
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "time_entry_id", nullable = false)
-    @OnDelete(action = OnDeleteAction.CASCADE)
+    @OnDelete(action = OnDeleteAction.RESTRICT)
     private TimeEntry timeEntry;
 
     @Enumerated(EnumType.STRING)

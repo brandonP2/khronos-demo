@@ -82,7 +82,13 @@ public interface TimeEntryRepository extends JpaRepository<TimeEntry, Long> {
     @Query("select t.worker.userId from TimeEntry t where t.id = :id")
     Optional<Long> findWorkerIdById(@Param("id") Long id);
 
+    // Voided entries count too: they are part of the record. These keep workers, venues and owners with
+    // entries from being deleted
     boolean existsByWorker_UserId(Long workerId);
+
+    boolean existsByEstablishment_Id(Long establishmentId);
+
+    boolean existsByEstablishment_Owner_Id(Long ownerId);
 
     // Entries are [clockIn, clockOut) intervals, and an open one runs on with no end. A null end
     // checks a new open entry. Voided entries never overlap anything.

@@ -103,9 +103,18 @@ public class WorkerServiceImpl implements WorkerService {
         return workerMapper.toResponse(worker);
     }
 
+    // Time entries are the record of the hours worked, so a worker who has any is deactivated, not deleted.
+    // The worker's lock makes a clock-in sent meanwhile wait, and then find no worker.
     @Override
     public void delete(Long userId) {
-        workerRepository.delete(getWorker(userId));
+        Worker worker = workerRepository.lockAllById(List.of(userId)).stream()
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Worker", userId));
+        if (timeEntryRepository.existsByWorker_UserId(userId)) {
+            throw new BusinessRuleException("Cannot delete a worker who has time entries; deactivate them instead"
+                    + " (PUT /api/workers/" + userId + "/active) to keep their time entries");
+        }
+        workerRepository.delete(worker);
     }
 
     @Override
