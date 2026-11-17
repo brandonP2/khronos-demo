@@ -17,6 +17,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -66,14 +67,20 @@ public class EventServiceImpl implements EventService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<EventResponseDTO> findByZone(Long zoneId) {
-        return eventRepository.findByZone_Id(zoneId).stream().map(eventMapper::toResponse).toList();
+    public List<EventResponseDTO> findByZone(Long zoneId, LocalDate from, LocalDate to) {
+        DateRange range = new DateRange(from, to);
+        return eventRepository.findByZone(zoneId, range.startInclusive(), range.endExclusive()).stream()
+                .map(eventMapper::toResponse)
+                .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<EventResponseDTO> findByEstablishment(Long establishmentId) {
-        return eventRepository.findByZone_Establishment_Id(establishmentId).stream().map(eventMapper::toResponse).toList();
+    public List<EventResponseDTO> findByEstablishment(Long establishmentId, LocalDate from, LocalDate to) {
+        DateRange range = new DateRange(from, to);
+        return eventRepository.findByEstablishment(establishmentId, range.startInclusive(), range.endExclusive()).stream()
+                .map(eventMapper::toResponse)
+                .toList();
     }
 
     @Override

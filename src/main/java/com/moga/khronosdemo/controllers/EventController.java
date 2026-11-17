@@ -5,10 +5,12 @@ import com.moga.khronosdemo.dtos.response.EventResponseDTO;
 import com.moga.khronosdemo.services.EventService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -36,14 +38,18 @@ public class EventController {
 
     @GetMapping("/zone/{zoneId}")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.memberOfZone(#zoneId)")
-    public List<EventResponseDTO> findByZone(@PathVariable Long zoneId) {
-        return eventService.findByZone(zoneId);
+    public List<EventResponseDTO> findByZone(@PathVariable Long zoneId,
+                                             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return eventService.findByZone(zoneId, from, to);
     }
 
     @GetMapping("/establishment/{establishmentId}")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.memberOfEstablishment(#establishmentId)")
-    public List<EventResponseDTO> findByEstablishment(@PathVariable Long establishmentId) {
-        return eventService.findByEstablishment(establishmentId);
+    public List<EventResponseDTO> findByEstablishment(@PathVariable Long establishmentId,
+                                                      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                                      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return eventService.findByEstablishment(establishmentId, from, to);
     }
 
     @GetMapping("/{id}")

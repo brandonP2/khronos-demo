@@ -2,12 +2,35 @@ package com.moga.khronosdemo.repositories;
 
 import com.moga.khronosdemo.entities.Event;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface EventRepository extends JpaRepository<Event, Long> {
 
-    List<Event> findByZone_Id(Long zoneId);
+    // The zone is fetched with the event because the response includes its name.
+    // A null bound leaves that side of the range open; the casts give PostgreSQL its type.
+    @Query("""
+            select e from Event e join fetch e.zone z
+            where z.id = :zoneId
+              and (cast(:from as LocalDateTime) is null or e.dateTime >= :from)
+              and (cast(:until as LocalDateTime) is null or e.dateTime < :until)
+            order by e.dateTime, e.id
+            """)
+    List<Event> findByZone(@Param("zoneId") Long zoneId,
+                           @Param("from") LocalDateTime from,
+                           @Param("until") LocalDateTime until);
 
-    List<Event> findByZone_Establishment_Id(Long establishmentId);
+    @Query("""
+            select e from Event e join fetch e.zone z
+            where z.establishment.id = :establishmentId
+              and (cast(:from as LocalDateTime) is null or e.dateTime >= :from)
+              and (cast(:until as LocalDateTime) is null or e.dateTime < :until)
+            order by e.dateTime, e.id
+            """)
+    List<Event> findByEstablishment(@Param("establishmentId") Long establishmentId,
+                                    @Param("from") LocalDateTime from,
+                                    @Param("until") LocalDateTime until);
 }

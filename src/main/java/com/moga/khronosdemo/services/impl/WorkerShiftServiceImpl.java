@@ -21,6 +21,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -91,38 +92,29 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<WorkerShiftResponseDTO> findByOwner(Long ownerId) {
-        /* return workerShiftRepository.findByWorker_Establishment_Owner_IdOrderByDateAscStartTimeAsc(ownerId).stream()
+    public List<WorkerShiftResponseDTO> findByOwner(Long ownerId, LocalDate from, LocalDate to) {
+        DateRange range = new DateRange(from, to);
+        return workerShiftRepository.findByOwner(ownerId, range.from(), range.to()).stream()
                 .map(workerShiftMapper::toResponse)
                 .toList();
-        */
-
-        return workerShiftRepository.findAll().stream().filter(w ->
-                        w.getWorker().getEstablishment().getOwner().getId()
-                .equals(ownerId))
-                .map(workerShiftMapper::toResponse).toList();
-
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<WorkerShiftResponseDTO> findByWorker(Long workerId) {
-        //return workerShiftRepository.findByWorker_UserId(workerId).stream().map(workerShiftMapper::toResponse).toList();
-
-        return workerShiftRepository.findAll().stream().filter(w -> w.getWorker().getUserId().equals(workerId)).map(workerShiftMapper::toResponse).toList();
-
+    public List<WorkerShiftResponseDTO> findByWorker(Long workerId, LocalDate from, LocalDate to) {
+        DateRange range = new DateRange(from, to);
+        return workerShiftRepository.findByWorker(workerId, range.from(), range.to()).stream()
+                .map(workerShiftMapper::toResponse)
+                .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<WorkerShiftResponseDTO> findByZone(Long zoneId) {
-        //return workerShiftRepository.findByZone_Id(zoneId).stream().map(workerShiftMapper::toResponse).toList();
-
-        return workerShiftRepository.findAll().stream()
-                .filter(w -> w.getZone().getId().equals(zoneId))
+    public List<WorkerShiftResponseDTO> findByZone(Long zoneId, LocalDate from, LocalDate to) {
+        DateRange range = new DateRange(from, to);
+        return workerShiftRepository.findByZone(zoneId, range.from(), range.to()).stream()
                 .map(workerShiftMapper::toResponse)
                 .toList();
-
     }
 
     @Override

@@ -11,11 +11,41 @@ import java.util.List;
 
 public interface WorkerShiftRepository extends JpaRepository<WorkerShift, Long> {
 
-    List<WorkerShift> findByWorker_UserId(Long workerId);
+    // The listings only map the worker and zone ids, which need no extra query.
+    // from and to are inclusive, and a null one leaves that side of the range open. The casts
+    // tell PostgreSQL the type of a null date parameter, which it cannot work out on its own.
+    @Query("""
+            select s from WorkerShift s
+            where s.worker.establishment.owner.id = :ownerId
+              and (cast(:from as LocalDate) is null or s.date >= :from)
+              and (cast(:to as LocalDate) is null or s.date <= :to)
+            order by s.date, s.startTime, s.id
+            """)
+    List<WorkerShift> findByOwner(@Param("ownerId") Long ownerId,
+                                  @Param("from") LocalDate from,
+                                  @Param("to") LocalDate to);
 
-    List<WorkerShift> findByZone_Id(Long zoneId);
+    @Query("""
+            select s from WorkerShift s
+            where s.worker.userId = :workerId
+              and (cast(:from as LocalDate) is null or s.date >= :from)
+              and (cast(:to as LocalDate) is null or s.date <= :to)
+            order by s.date, s.startTime, s.id
+            """)
+    List<WorkerShift> findByWorker(@Param("workerId") Long workerId,
+                                   @Param("from") LocalDate from,
+                                   @Param("to") LocalDate to);
 
-    List<WorkerShift> findByWorker_Establishment_Owner_IdOrderByDateAscStartTimeAsc(Long ownerId);
+    @Query("""
+            select s from WorkerShift s
+            where s.zone.id = :zoneId
+              and (cast(:from as LocalDate) is null or s.date >= :from)
+              and (cast(:to as LocalDate) is null or s.date <= :to)
+            order by s.date, s.startTime, s.id
+            """)
+    List<WorkerShift> findByZone(@Param("zoneId") Long zoneId,
+                                 @Param("from") LocalDate from,
+                                 @Param("to") LocalDate to);
 
     @Query("""
             select count(s) > 0 from WorkerShift s
