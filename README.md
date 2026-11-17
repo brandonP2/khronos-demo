@@ -246,6 +246,7 @@ The files open directly in a spreadsheet set to Spanish: UTF-8 with a byte order
 
 - The database doesn't stop overlapping shifts by itself. An exclusion constraint on `(worker_id, tsrange(starts_at, ends_at))` would, but adding it would make the migration fail on a database that already holds overlapping shifts written before the per-worker lock existed. The service check under that lock covers every request that goes through the API.
 - This is a record of what workers and owners entered. It is not certified as meeting any particular legal requirement for working-time records.
+- The append-only records (the time entries' history, the cash closings' history and the stock movements) are protected by row-level triggers (`BEFORE UPDATE`, and `OR DELETE` for stock movements, `FOR EACH ROW`): they cover the application and any SQL that changes or deletes rows, but a row trigger doesn't fire on `TRUNCATE`, which empties a whole table at once. The integration tests rely on that to clean the database between tests. Stopping `TRUNCATE` in production is a matter of the database role's privileges, not of a trigger: the role the application connects with should not have the `TRUNCATE` privilege on these tables, nor own them, since a table's owner can always truncate it. Flyway can run the migrations with a separate owner role (`spring.flyway.user` and `spring.flyway.password`).
 
 ## Cash, expenses and the business summary
 
@@ -460,7 +461,7 @@ A product has no stock field. The response works out:
 
 These rules answer **400** with `fieldErrors`: `type` (`COUNT is only recorded by a stock count (POST /api/stock-counts)`), `quantity` (`must be greater than 0`, `must not be 0`, and `would leave a stock of 1000000000000.000; a product's stock can be at most 999999999999.999 either way` when the stock after it wouldn't fit), `reason` (`must not be blank for WASTE and ADJUSTMENT`, `size must be between 3 and 255`) and `unitCost` (`can only be sent with a PURCHASE`).
 
-The ledger is the record of what happened, so **a movement is never edited or deleted**: there is no `PUT` or `DELETE`, and a mistake is corrected with a new movement (an `ADJUSTMENT`, or a count). A database trigger rejects updates and deletes of `stock_movements`; the only change it allows is the database clearing the author's link when their account is deleted, and the movement keeps their name.
+The ledger is the record of what happened, so **a movement is never edited or deleted**: there is no `PUT` or `DELETE`, and a mistake is corrected with a new movement (an `ADJUSTMENT`, or a count). A database trigger rejects updates and deletes of `stock_movements`; the only change it allows is the database clearing the author's link when their account is deleted, and the movement keeps their name. Like the other append-only triggers, it doesn't stop a `TRUNCATE`: see [Known limits](#known-limits).
 
 Movements of the same product take turns: each one is recorded while its product's row is locked, and its `stockAfter` is the stock read under that lock plus its quantity, so two movements sent at once never start from the same stock. Changing a product's unit, deactivating it and deleting it take the same lock, as does adding it to a purchase order.
 
