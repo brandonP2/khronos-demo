@@ -80,6 +80,10 @@ public class WorkerEventServiceImpl implements WorkerEventService {
 
     private void validate(Worker worker, Event event) {
 
+        if (worker.getActive().equals(false)) {
+            throw new BusinessRuleException("Worker is not active");
+        }
+
         if (workerEventRepository.existsByWorker_UserIdAndEvent_Id(worker.getUserId(), event.getId())) {
             throw new BusinessRuleException("Worker is already assigned to this event");
         }

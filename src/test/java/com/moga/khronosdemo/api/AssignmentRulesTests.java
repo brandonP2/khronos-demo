@@ -86,6 +86,21 @@ class AssignmentRulesTests extends IntegrationTest {
     }
 
     @Test
+    void rejectsAnInactiveWorkerEvenWithACoveringShift() throws Exception {
+        Event dinner = createEvent(hall, DAY.atTime(19, 0));
+        worker.setActive(false);
+        workerRepository.save(worker);
+
+        mockMvc.perform(postJson("/api/worker-events", """
+                        [ { "workerId": %d, "eventId": %d } ]
+                        """.formatted(worker.getUserId(), dinner.getId())).with(as(owner)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Assignment [0]: Worker is not active"));
+
+        assertEquals(0, workerEventRepository.count());
+    }
+
+    @Test
     void deletingTheCoveringShiftUnassignsTheWorker() throws Exception {
         Event dinner = createEvent(hall, DAY.atTime(19, 0));
         Long assignmentId = assign(worker, dinner).getId();
