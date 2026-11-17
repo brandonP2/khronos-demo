@@ -140,7 +140,7 @@ Shifts say what was planned; time entries say what happened. This part of the AP
 
 Each establishment has an IANA time zone, `timeZone`, such as `Europe/Madrid` (the default) or `Atlantic/Canary`. It is optional when creating an establishment, and an update without it keeps the current one. A value that is not a region id (for example `+02:00` or a typo) answers **400** with `fieldErrors.timeZone`.
 
-Clock-ins and clock-outs are stored as UTC instants and returned as ISO-8601 with `Z`, for example `2026-11-20T17:02:00Z`. The establishment's time zone turns them into local dates and times: the business day of an entry, lateness in the reports, and the dates and times in the CSV files.
+Clock-ins and clock-outs are stored as UTC instants and returned as ISO-8601 with `Z`, for example `2026-11-20T17:02:00Z`. The establishment's time zone turns them into local dates and times: the business day of an entry, lateness in the reports, and the dates and times in the CSV files. The business day is worked out when an entry is created or corrected, so changing the zone later doesn't move existing entries to another day; set the right zone before workers start clocking in.
 
 ### Night shifts and the business day
 
