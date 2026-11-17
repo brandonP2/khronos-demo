@@ -43,7 +43,7 @@ Deleting a parent also deletes everything under it. For example, deleting an est
 |---|---|
 | `PLATFORM_ADMIN` | Everything. This is the only role that creates users of any role and creates or deletes establishments. |
 | `OWNER` | Manages their own establishments: edits them and manages their zones, workers, shifts, events and assignments. They can create users with the `WORKER` role, link to their establishments only the accounts they created, and reset their workers' passwords. |
-| `WORKER` | Can read their own profile, shifts and event assignments, and see the zones, events and assignments of the establishment they work at. They see who the owner is but not the owner's email or phone. They can change their own password. |
+| `WORKER` | Can read their own profile, shifts and event assignments, and see the zones and events of the establishment they work at and who is assigned to each event. Listing the establishment's assignments gives them only their own. They see who the owner is but not the owner's email or phone. They can change their own password. |
 
 Each endpoint checks access with `@PreAuthorize` rules backed by `AccessGuard`. A request for data that belongs to another owner returns **403**.
 
@@ -168,7 +168,7 @@ All endpoints are under `/api` and need a bearer token, except `POST /api/auth/l
 | `POST /api/workers/with-user` | `{ "establishmentId": 1, "user": { same fields as POST /api/users/create/worker } }` | **201** `{ "user": {...}, "worker": {...} }`. The account and the link are saved together or not at all. | The establishment's owner or an admin |
 | `PUT /api/workers/{id}/active` | `{ "active": false }` | **200** the worker. Repeating it changes nothing. | The worker's owner or an admin |
 | `PUT /api/users/{id}/password/reset` | `{ "newPassword": "..." }` | **204**. The user's older tokens stop working. | An admin (not on another admin) or the worker's owner |
-| `GET /api/worker-events/establishment/{id}?from&to` | | **200** list of assignments | The owner, its workers or an admin |
+| `GET /api/worker-events/establishment/{id}?from&to` | | **200** list of assignments. A worker gets only their own. | The owner, its workers or an admin |
 | `GET /api/users/establishment/{id}` | | **200** list of users | The owner or an admin |
 
 `DELETE /api/workers/deactivate/{id}` still works but is deprecated: it toggles the flag, so a retried request undoes itself. Use `PUT /api/workers/{id}/active`.

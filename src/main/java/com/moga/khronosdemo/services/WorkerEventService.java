@@ -16,7 +16,8 @@ public interface WorkerEventService {
 
     List<WorkerEventResponseDTO> findByEvent(Long eventId);
 
-    List<WorkerEventResponseDTO> findByEstablishment(Long establishmentId, LocalDate from, LocalDate to);
+    // Only the given worker's assignments, or everyone's when workerId is null
+    List<WorkerEventResponseDTO> findByEstablishment(Long establishmentId, Long workerId, LocalDate from, LocalDate to);
 
     void delete(Long id);
 }

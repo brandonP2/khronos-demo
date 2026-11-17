@@ -126,9 +126,9 @@ public class WorkerEventServiceImpl implements WorkerEventService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<WorkerEventResponseDTO> findByEstablishment(Long establishmentId, LocalDate from, LocalDate to) {
+    public List<WorkerEventResponseDTO> findByEstablishment(Long establishmentId, Long workerId, LocalDate from, LocalDate to) {
         DateRange range = new DateRange(from, to);
-        return workerEventRepository.findByEstablishment(establishmentId, range.startInclusive(), range.endExclusive())
+        return workerEventRepository.findByEstablishment(establishmentId, workerId, range.startInclusive(), range.endExclusive())
                 .stream()
                 .map(workerEventMapper::toResponse)
                 .toList();

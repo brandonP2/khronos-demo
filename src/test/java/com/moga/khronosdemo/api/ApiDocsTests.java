@@ -19,7 +19,7 @@ class ApiDocsTests extends IntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/users/{id}/password/reset'].put").exists())
                 .andExpect(jsonPath("$.paths['/api/users/establishment/{establishmentId}'].get").exists())
                 .andExpect(jsonPath("$.paths['/api/worker-events/establishment/{establishmentId}'].get.parameters[*].name",
-                        hasItem("from")))
+                        contains("establishmentId", "from", "to")))
                 .andExpect(jsonPath("$.paths['/api/worker-shifts/owner/{ownerId}'].get.parameters[*].name", hasItem("to")))
                 .andExpect(jsonPath("$.paths['/api/workers/deactivate/{userId}'].delete.deprecated").value(true))
                 // The caller is taken from the token, so it must not show up as a parameter

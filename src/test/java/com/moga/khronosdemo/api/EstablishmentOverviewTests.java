@@ -10,12 +10,16 @@ import com.moga.khronosdemo.entities.enums.Role;
 import com.moga.khronosdemo.support.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -73,10 +77,38 @@ class EstablishmentOverviewTests extends IntegrationTest {
     }
 
     @Test
-    void assignmentsAreVisibleToTheEstablishmentsMembersOnly() throws Exception {
+    void aWorkerOnlyGetsTheirOwnAssignments() throws Exception {
+        mockMvc.perform(getJson("/api/worker-events/establishment/{id}", venue.getId()).with(as(worker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(today.getId().intValue(), tomorrow.getId().intValue())))
+                .andExpect(jsonPath("$[*].workerId", everyItem(is(worker.getUserId().intValue()))));
         mockMvc.perform(getJson("/api/worker-events/establishment/{id}", venue.getId()).with(as(colleague)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(3)));
+                .andExpect(jsonPath("$[*].id", contains(todayColleague.getId().intValue())));
+
+        // The date filters still apply
+        mockMvc.perform(getJson("/api/worker-events/establishment/{id}?from=2030-05-11&to=2030-05-11", venue.getId())
+                        .with(as(worker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(tomorrow.getId().intValue())));
+        mockMvc.perform(getJson("/api/worker-events/establishment/{id}?from=2030-05-11&to=2030-05-11", venue.getId())
+                        .with(as(colleague)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+
+        // The owner and an admin still get the whole staff's
+        for (RequestPostProcessor caller : List.of(as(owner), as(createAdmin("admin")))) {
+            mockMvc.perform(getJson("/api/worker-events/establishment/{id}", venue.getId()).with(caller))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[*].id", contains(
+                            today.getId().intValue(), todayColleague.getId().intValue(), tomorrow.getId().intValue())));
+        }
+    }
+
+    @Test
+    void assignmentsAreVisibleToTheEstablishmentsMembersOnly() throws Exception {
+        mockMvc.perform(getJson("/api/worker-events/establishment/{id}", venue.getId()).with(as(colleague)))
+                .andExpect(status().isOk());
         mockMvc.perform(getJson("/api/worker-events/establishment/{id}", venue.getId()).with(as(outsider)))
                 .andExpect(status().isForbidden());
         mockMvc.perform(getJson("/api/worker-events/establishment/{id}", venue.getId())

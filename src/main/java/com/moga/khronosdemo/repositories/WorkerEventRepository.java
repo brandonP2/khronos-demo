@@ -16,16 +16,19 @@ public interface WorkerEventRepository extends JpaRepository<WorkerEvent, Long> 
 
     boolean existsByWorker_UserIdAndEvent_Id(Long workerId, Long eventId);
 
-    // Assignments to the establishment's events, filtered on the event's date-time.
-    // A null bound leaves that side of the range open; the casts give PostgreSQL its type.
+    // Assignments to the establishment's events, filtered on the event's date-time and, unless
+    // workerId is null, on the worker. A null bound leaves that side of the range open; the casts
+    // give PostgreSQL its type.
     @Query("""
             select we from WorkerEvent we join we.event e
             where e.zone.establishment.id = :establishmentId
+              and (:workerId is null or we.worker.userId = :workerId)
               and (cast(:from as LocalDateTime) is null or e.dateTime >= :from)
               and (cast(:until as LocalDateTime) is null or e.dateTime < :until)
             order by e.dateTime, we.id
             """)
     List<WorkerEvent> findByEstablishment(@Param("establishmentId") Long establishmentId,
+                                          @Param("workerId") Long workerId,
                                           @Param("from") LocalDateTime from,
                                           @Param("until") LocalDateTime until);
 }
