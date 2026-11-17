@@ -1,0 +1,57 @@
+package com.moga.khronosdemo.repositories;
+
+import com.moga.khronosdemo.entities.StockMovement;
+import com.moga.khronosdemo.entities.enums.StockMovementType;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Collection;
+import java.util.List;
+
+public interface StockMovementRepository extends JpaRepository<StockMovement, Long> {
+
+    // The stock of each of the establishment's products that has movements, in one query
+    @Query("""
+            select m.product.id as productId, sum(m.quantity) as stock from StockMovement m
+            where m.establishment.id = :establishmentId
+            group by m.product.id
+            """)
+    List<ProductStock> sumByEstablishment(@Param("establishmentId") Long establishmentId);
+
+    // The stock of each of these products that has movements, in one query
+    @Query("""
+            select m.product.id as productId, sum(m.quantity) as stock from StockMovement m
+            where m.product.id in :productIds
+            group by m.product.id
+            """)
+    List<ProductStock> sumByProducts(@Param("productIds") Collection<Long> productIds);
+
+    // Newest business day first, then the latest recorded. from and to filter the business day, inclusive;
+    // a null filter is left out
+    @Query("""
+            select m from StockMovement m join fetch m.product
+            where m.establishment.id = :establishmentId
+              and (cast(:from as LocalDate) is null or m.date >= :from)
+              and (cast(:to as LocalDate) is null or m.date <= :to)
+              and (:productId is null or m.product.id = :productId)
+              and (:type is null or m.type = :type)
+            order by m.date desc, m.createdAt desc, m.id desc
+            """)
+    List<StockMovement> findByEstablishment(@Param("establishmentId") Long establishmentId,
+                                            @Param("from") LocalDate from,
+                                            @Param("to") LocalDate to,
+                                            @Param("productId") Long productId,
+                                            @Param("type") StockMovementType type);
+
+    boolean existsByProduct_Id(Long productId);
+
+    interface ProductStock {
+
+        Long getProductId();
+
+        BigDecimal getStock();
+    }
+}

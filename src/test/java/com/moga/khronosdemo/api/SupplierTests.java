@@ -2,11 +2,9 @@ package com.moga.khronosdemo.api;
 
 import com.moga.khronosdemo.entities.Establishment;
 import com.moga.khronosdemo.entities.User;
-import com.moga.khronosdemo.repositories.SupplierRepository;
 import com.moga.khronosdemo.support.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import static org.hamcrest.Matchers.contains;
@@ -23,9 +21,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * the establishment whatever their case, in the service and in the database.
  */
 class SupplierTests extends IntegrationTest {
-
-    @Autowired
-    private SupplierRepository supplierRepository;
 
     private User owner;
     private Establishment venue;

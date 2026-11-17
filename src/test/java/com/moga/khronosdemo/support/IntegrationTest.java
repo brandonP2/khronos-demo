@@ -16,6 +16,9 @@ import com.moga.khronosdemo.repositories.CashClosingRepository;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
 import com.moga.khronosdemo.repositories.ExpenseRepository;
+import com.moga.khronosdemo.repositories.ProductRepository;
+import com.moga.khronosdemo.repositories.StockMovementRepository;
+import com.moga.khronosdemo.repositories.SupplierRepository;
 import com.moga.khronosdemo.repositories.TimeEntryChangeRepository;
 import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
@@ -114,6 +117,15 @@ public abstract class IntegrationTest {
 
     @Autowired
     protected CashClosingChangeRepository cashClosingChangeRepository;
+
+    @Autowired
+    protected SupplierRepository supplierRepository;
+
+    @Autowired
+    protected ProductRepository productRepository;
+
+    @Autowired
+    protected StockMovementRepository stockMovementRepository;
 
     @Autowired
     protected PasswordEncoder passwordEncoder;

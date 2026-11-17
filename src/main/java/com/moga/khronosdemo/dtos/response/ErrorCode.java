@@ -50,5 +50,20 @@ public enum ErrorCode {
     FUTURE_DATE,
 
     /** 409 when another supplier of the establishment already has that name, whatever its case. */
-    SUPPLIER_NAME_TAKEN
+    SUPPLIER_NAME_TAKEN,
+
+    /** 409 when another product of the establishment already has that name, whatever its case. */
+    PRODUCT_NAME_TAKEN,
+
+    /** 409 when a product is inactive and so takes no new stock movements or purchase order lines. */
+    PRODUCT_INACTIVE,
+
+    /** 409 when a product's unit is changed after stock movements were recorded in it. */
+    PRODUCT_UNIT_LOCKED,
+
+    /** 409 when a product with stock movements or purchase order lines is deleted; deactivate it instead. */
+    PRODUCT_HAS_HISTORY,
+
+    /** 409 when a request names a supplier or product of another establishment than the one it is for. */
+    OTHER_ESTABLISHMENT
 }

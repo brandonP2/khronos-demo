@@ -5,6 +5,7 @@ import com.moga.khronosdemo.repositories.CashClosingRepository;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
 import com.moga.khronosdemo.repositories.ExpenseRepository;
+import com.moga.khronosdemo.repositories.ProductRepository;
 import com.moga.khronosdemo.repositories.SupplierRepository;
 import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
@@ -18,6 +19,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Component("access")
 @Transactional(readOnly = true)
@@ -34,13 +39,14 @@ public class AccessGuard {
     private final ExpenseRepository expenseRepository;
     private final CashClosingRepository cashClosingRepository;
     private final SupplierRepository supplierRepository;
+    private final ProductRepository productRepository;
 
     public AccessGuard(EstablishmentRepository establishmentRepository, ZoneRepository zoneRepository,
                        EventRepository eventRepository, WorkerRepository workerRepository,
                        WorkerShiftRepository workerShiftRepository, WorkerEventRepository workerEventRepository,
                        UserRepository userRepository, TimeEntryRepository timeEntryRepository,
                        ExpenseRepository expenseRepository, CashClosingRepository cashClosingRepository,
-                       SupplierRepository supplierRepository) {
+                       SupplierRepository supplierRepository, ProductRepository productRepository) {
         this.establishmentRepository = establishmentRepository;
         this.zoneRepository = zoneRepository;
         this.eventRepository = eventRepository;
@@ -52,6 +58,7 @@ public class AccessGuard {
         this.expenseRepository = expenseRepository;
         this.cashClosingRepository = cashClosingRepository;
         this.supplierRepository = supplierRepository;
+        this.productRepository = productRepository;
     }
 
     public Long currentUserId() {
@@ -205,5 +212,27 @@ public class AccessGuard {
         return supplierId != null && supplierRepository.findEstablishmentIdById(supplierId)
                 .map(this::ownsEstablishment)
                 .orElse(false);
+    }
+
+    // A product belongs to the establishment it was created for, which never changes
+    public boolean ownsProduct(Long productId) {
+        return productId != null && productRepository.findEstablishmentIdById(productId)
+                .map(this::ownsEstablishment)
+                .orElse(false);
+    }
+
+    // Every product exists and is of an establishment the caller owns. One query for the products,
+    // however many there are, and one per establishment they belong to
+    public boolean ownsProducts(Collection<Long> productIds) {
+        if (productIds == null || productIds.isEmpty() || productIds.stream().anyMatch(Objects::isNull)) {
+            return false;
+        }
+        Set<Long> ids = Set.copyOf(productIds);
+        List<ProductRepository.ProductEstablishment> found = productRepository.findEstablishmentIdsByIdIn(ids);
+        return found.size() == ids.size() && found.stream()
+                .map(ProductRepository.ProductEstablishment::getEstablishmentId)
+                .collect(Collectors.toSet())
+                .stream()
+                .allMatch(this::ownsEstablishment);
     }
 }
