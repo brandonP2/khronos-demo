@@ -41,8 +41,8 @@ public enum ErrorCode {
     CASH_NOT_COUNTED,
 
     /**
-     * 409 when a cash expense is added, changed, moved or deleted on a day whose cash closing is closed;
-     * details.date is that day.
+     * 409 when a cash expense is added, changed, moved or deleted on a day whose cash closing is closed,
+     * also the one a purchase order's receipt would create; details.date is that day.
      */
     CASH_DAY_CLOSED,
 

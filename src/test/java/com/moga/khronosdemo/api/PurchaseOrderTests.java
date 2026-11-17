@@ -286,28 +286,45 @@ class PurchaseOrderTests extends IntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn(), "$.id");
         mockMvc.perform(put("/api/cash-closings/{id}/close", closing).with(as(owner))).andExpect(status().isOk());
-        Long id = createOrder(lineOf(beer, "2", "95"));
+        Long id = createOrder(lineOf(beer, "2", "95"), lineOf(rum, "6", null));
         transition(id, "order");
+        // Both lines come in with a new cost, which would become each product's cost
+        String lines = """
+                [ { "lineId": %d, "receivedQuantity": 2, "unitCost": 96 }, { "lineId": %d, "receivedQuantity": 6, "unitCost": 11 } ]
+                """.formatted(lineId(id, 0), lineId(id, 1));
 
-        receive(id, receiptOf(id, "2"), true, "CASH", "2030-05-09")
+        // The expense's own 409, with its code and the closed day, as when it is entered by hand
+        receive(id, lines, true, "CASH", "2030-05-09")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("The cash closing of 2030-05-09 is closed; reopen it to add,"
-                        + " change or delete cash expenses of that day"));
+                        + " change or delete cash expenses of that day"))
+                .andExpect(jsonPath("$.code").value("CASH_DAY_CLOSED"))
+                .andExpect(jsonPath("$.details.date").value("2030-05-09"));
 
-        // Nothing was received
+        // Nothing at all was received: the order, its lines and the products are as they were
         mockMvc.perform(getJson("/api/purchase-orders/{id}", id).with(as(owner)))
                 .andExpect(jsonPath("$.status").value("ORDERED"))
+                .andExpect(jsonPath("$.orderDate").value("2030-05-10"))
                 .andExpect(jsonPath("$.receivedDate").value(nullValue()))
                 .andExpect(jsonPath("$.lines[0].receivedQuantity").value(nullValue()))
+                .andExpect(jsonPath("$.lines[0].unitCost").value(95.0))
+                .andExpect(jsonPath("$.lines[1].receivedQuantity").value(nullValue()))
+                .andExpect(jsonPath("$.lines[1].unitCost").value(nullValue()))
+                .andExpect(jsonPath("$.total").value(190.0))
                 .andExpect(jsonPath("$.expenseId").value(nullValue()));
         assertEquals(0, stockMovementRepository.count());
         assertEquals(0, expenseRepository.count());
         assertEquals(new BigDecimal("90.00"), productRepository.findById(beer).orElseThrow().getUnitCost());
+        assertEquals(new BigDecimal("10.00"), productRepository.findById(rum).orElseThrow().getUnitCost());
+        mockMvc.perform(getJson("/api/products/{id}", beer).with(as(owner)))
+                .andExpect(jsonPath("$.currentStock").value(0.0));
 
         // Paid by card, the closed day doesn't matter
-        receive(id, receiptOf(id, "2"), true, "CARD", "2030-05-09")
+        receive(id, lines, true, "CARD", "2030-05-09")
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("RECEIVED"))
                 .andExpect(jsonPath("$.expenseId").isNumber());
+        assertEquals(new BigDecimal("96.00"), productRepository.findById(beer).orElseThrow().getUnitCost());
     }
 
     @Test

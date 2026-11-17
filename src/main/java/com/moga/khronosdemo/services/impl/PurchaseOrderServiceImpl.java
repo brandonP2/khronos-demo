@@ -54,7 +54,8 @@ import java.util.stream.Collectors;
  * Receiving an order is one transaction: it records a PURCHASE movement for each line that came in,
  * updates the cost of each product received with a cost and, if asked, creates the expense through
  * ExpenseService, with its own checks. When that expense is in cash and its day's cash closing is closed,
- * ExpenseService refuses it with its own 409 and nothing at all is received.
+ * ExpenseService refuses it with its own 409 (CASH_DAY_CLOSED, the day in details.date) and nothing at all
+ * is received.
  * <p>
  * Every change locks the order's row first, so two changes to one order take turns, and then its
  * products in id order. Receiving locks the establishment before both, since the expense it may create

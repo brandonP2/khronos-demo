@@ -9,6 +9,7 @@ import com.moga.khronosdemo.dtos.request.PurchaseOrderRequestDTO;
 import com.moga.khronosdemo.dtos.request.StockMovementRequestDTO;
 import com.moga.khronosdemo.dtos.request.SupplierRequestDTO;
 import com.moga.khronosdemo.dtos.response.CashClosingResponseDTO;
+import com.moga.khronosdemo.dtos.response.ErrorCode;
 import com.moga.khronosdemo.dtos.response.PurchaseOrderResponseDTO;
 import com.moga.khronosdemo.entities.Establishment;
 import com.moga.khronosdemo.entities.User;
@@ -30,6 +31,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -129,9 +131,11 @@ class PurchaseOrderLockingTests extends IntegrationTest {
 
         releaseFirst.countDown();
         ExecutionException failure = assertThrows(ExecutionException.class, () -> receipt.get(10, TimeUnit.SECONDS));
-        assertInstanceOf(BusinessRuleException.class, failure.getCause());
+        BusinessRuleException refused = assertInstanceOf(BusinessRuleException.class, failure.getCause());
         assertEquals("The cash closing of 2030-05-10 is closed; reopen it to add, change or delete cash expenses of that day",
-                failure.getCause().getMessage());
+                refused.getMessage());
+        assertEquals(ErrorCode.CASH_DAY_CLOSED, refused.getCode());
+        assertEquals(Map.of("date", "2030-05-10"), refused.getDetails());
         assertEquals(0, stockMovementRepository.count());
         assertEquals(0, expenseRepository.count());
         assertEquals(PurchaseOrderStatus.ORDERED, purchaseOrderService.findById(orderId).status());
