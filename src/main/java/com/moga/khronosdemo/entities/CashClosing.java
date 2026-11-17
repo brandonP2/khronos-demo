@@ -6,9 +6,10 @@ import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+
+import static com.moga.khronosdemo.entities.Money.euros;
 
 /**
  * The cash closing of one business day at an establishment: the takings by payment method, the cash
@@ -173,11 +174,6 @@ public class CashClosing {
         this.closedByName = null;
         this.closedAt = null;
         this.updatedAt = reopenedAt;
-    }
-
-    // Sums and differences of amounts with two decimals keep two decimals; the scale is set explicitly anyway
-    private static BigDecimal euros(BigDecimal amount) {
-        return amount.setScale(2, RoundingMode.HALF_UP);
     }
 
     public Long getId() {

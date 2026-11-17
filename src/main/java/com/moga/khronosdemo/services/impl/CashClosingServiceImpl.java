@@ -15,7 +15,6 @@ import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.mappers.CashClosingMapper;
 import com.moga.khronosdemo.repositories.CashClosingChangeRepository;
 import com.moga.khronosdemo.repositories.CashClosingRepository;
-import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.ExpenseRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.services.CashClosingService;
@@ -37,8 +36,8 @@ import java.util.stream.Collectors;
 
 /**
  * The daily cash closing. Every change to an establishment's closings, like every change to its
- * expenses, first locks the establishment's row (EstablishmentRepository.lockById) and only then reads
- * the closing, so two requests for the same day take turns and the second one sees what the first one
+ * expenses, takes its lock through CashRecordLock: the establishment's row first, and only then the
+ * closing, so two requests for the same day take turns and the second one sees what the first one
  * committed: two closings for one day can't both be created, and a cash expense can't slip into a day
  * while it is being closed. The unique constraint on (establishment, business day) is the last line of
  * defence and also answers 409.
@@ -53,23 +52,23 @@ public class CashClosingServiceImpl implements CashClosingService {
 
     private final CashClosingRepository cashClosingRepository;
     private final CashClosingChangeRepository cashClosingChangeRepository;
-    private final EstablishmentRepository establishmentRepository;
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
+    private final CashRecordLock cashRecordLock;
     private final CashClosingMapper cashClosingMapper;
     private final CashClosingProperties properties;
     private final Clock clock;
 
     public CashClosingServiceImpl(CashClosingRepository cashClosingRepository,
                                   CashClosingChangeRepository cashClosingChangeRepository,
-                                  EstablishmentRepository establishmentRepository, ExpenseRepository expenseRepository,
-                                  UserRepository userRepository, CashClosingMapper cashClosingMapper,
+                                  ExpenseRepository expenseRepository, UserRepository userRepository,
+                                  CashRecordLock cashRecordLock, CashClosingMapper cashClosingMapper,
                                   CashClosingProperties properties, Clock clock) {
         this.cashClosingRepository = cashClosingRepository;
         this.cashClosingChangeRepository = cashClosingChangeRepository;
-        this.establishmentRepository = establishmentRepository;
         this.expenseRepository = expenseRepository;
         this.userRepository = userRepository;
+        this.cashRecordLock = cashRecordLock;
         this.cashClosingMapper = cashClosingMapper;
         this.properties = properties;
         this.clock = clock;
@@ -98,7 +97,7 @@ public class CashClosingServiceImpl implements CashClosingService {
 
     @Override
     public CashClosingResponseDTO create(CashClosingRequestDTO request, Long actorId) {
-        Establishment establishment = lockEstablishment(request.establishmentId());
+        Establishment establishment = cashRecordLock.lockEstablishment(request.establishmentId());
         LocalDate businessDate = request.businessDate();
         if (businessDate.isAfter(today(establishment))) {
             throw new BusinessRuleException("The business date cannot be in the future");
@@ -124,7 +123,7 @@ public class CashClosingServiceImpl implements CashClosingService {
     // The establishment and the business day never change: the ones in the request are ignored
     @Override
     public CashClosingResponseDTO update(Long id, CashClosingRequestDTO request, Long actorId) {
-        CashClosing closing = lockAndGet(id);
+        CashClosing closing = cashRecordLock.lockCashClosing(id);
         if (closing.isClosed()) {
             throw new BusinessRuleException("A closed cash closing cannot be edited; reopen it first");
         }
@@ -136,7 +135,7 @@ public class CashClosingServiceImpl implements CashClosingService {
     // Freezes the figures as they are now. A difference over the threshold, either way, needs a reason
     @Override
     public CashClosingResponseDTO close(Long id, String differenceReason, Long actorId) {
-        CashClosing closing = lockAndGet(id);
+        CashClosing closing = cashRecordLock.lockCashClosing(id);
         if (closing.isClosed()) {
             throw new BusinessRuleException("The cash closing is already closed");
         }
@@ -155,7 +154,7 @@ public class CashClosingServiceImpl implements CashClosingService {
     // Back to a draft, whose figures follow the day's cash expenses again
     @Override
     public CashClosingResponseDTO reopen(Long id, String reason, Long actorId) {
-        CashClosing closing = lockAndGet(id);
+        CashClosing closing = cashRecordLock.lockCashClosing(id);
         if (!closing.isClosed()) {
             throw new BusinessRuleException("The cash closing is not closed");
         }
@@ -167,7 +166,7 @@ public class CashClosingServiceImpl implements CashClosingService {
     // stays on record: it can be reopened and corrected, not deleted.
     @Override
     public void delete(Long id) {
-        CashClosing closing = lockAndGet(id);
+        CashClosing closing = cashRecordLock.lockCashClosing(id);
         if (closing.isClosed()) {
             throw new BusinessRuleException("A closed cash closing cannot be deleted; reopen it to correct it instead");
         }
@@ -223,20 +222,6 @@ public class CashClosingServiceImpl implements CashClosingService {
         LocalDate last = draftDays.stream().max(Comparator.naturalOrder()).orElseThrow();
         return expenseRepository.sumByDay(establishmentId, PaymentMethod.CASH, first, last).stream()
                 .collect(Collectors.toMap(ExpenseRepository.DayTotal::getBusinessDate, ExpenseRepository.DayTotal::getTotal));
-    }
-
-    private Establishment lockEstablishment(Long establishmentId) {
-        return establishmentRepository.lockById(establishmentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Establishment", establishmentId));
-    }
-
-    // Takes the establishment's lock before reading the closing, so the checks see any change committed meanwhile
-    private CashClosing lockAndGet(Long id) {
-        Long establishmentId = cashClosingRepository.findEstablishmentIdById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("CashClosing", id));
-        lockEstablishment(establishmentId);
-        return cashClosingRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("CashClosing", id));
     }
 
     private static BusinessRuleException alreadyExists(LocalDate businessDate) {

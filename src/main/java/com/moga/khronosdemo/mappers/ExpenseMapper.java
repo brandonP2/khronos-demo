@@ -6,7 +6,7 @@ import com.moga.khronosdemo.entities.Expense;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.math.RoundingMode;
+import static com.moga.khronosdemo.entities.Money.euros;
 
 @Component
 public class ExpenseMapper {
@@ -38,7 +38,7 @@ public class ExpenseMapper {
         expense.setCategory(request.category());
         expense.setDescription(request.description().strip());
         expense.setSupplier(clean(request.supplier()));
-        expense.setAmount(request.amount().setScale(2, RoundingMode.HALF_UP));
+        expense.setAmount(euros(request.amount()));
         expense.setPaymentMethod(request.paymentMethod());
         expense.setNotes(clean(request.notes()));
     }

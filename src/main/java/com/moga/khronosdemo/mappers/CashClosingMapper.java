@@ -9,7 +9,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
+
+import static com.moga.khronosdemo.entities.Money.euros;
 
 @Component
 public class CashClosingMapper {
@@ -73,9 +74,5 @@ public class CashClosingMapper {
         closing.setCountedCash(euros(request.countedCash()));
         closing.setTips(request.tips() != null ? euros(request.tips()) : null);
         closing.setNotes(StringUtils.hasText(request.notes()) ? request.notes().strip() : null);
-    }
-
-    private static BigDecimal euros(BigDecimal amount) {
-        return amount.setScale(2, RoundingMode.HALF_UP);
     }
 }
