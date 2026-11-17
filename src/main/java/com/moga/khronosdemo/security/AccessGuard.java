@@ -2,6 +2,7 @@ package com.moga.khronosdemo.security;
 
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
+import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.repositories.WorkerEventRepository;
 import com.moga.khronosdemo.repositories.WorkerRepository;
 import com.moga.khronosdemo.repositories.WorkerShiftRepository;
@@ -23,16 +24,19 @@ public class AccessGuard {
     private final WorkerRepository workerRepository;
     private final WorkerShiftRepository workerShiftRepository;
     private final WorkerEventRepository workerEventRepository;
+    private final UserRepository userRepository;
 
     public AccessGuard(EstablishmentRepository establishmentRepository, ZoneRepository zoneRepository,
                        EventRepository eventRepository, WorkerRepository workerRepository,
-                       WorkerShiftRepository workerShiftRepository, WorkerEventRepository workerEventRepository) {
+                       WorkerShiftRepository workerShiftRepository, WorkerEventRepository workerEventRepository,
+                       UserRepository userRepository) {
         this.establishmentRepository = establishmentRepository;
         this.zoneRepository = zoneRepository;
         this.eventRepository = eventRepository;
         this.workerRepository = workerRepository;
         this.workerShiftRepository = workerShiftRepository;
         this.workerEventRepository = workerEventRepository;
+        this.userRepository = userRepository;
     }
 
     public Long currentUserId() {
@@ -45,6 +49,14 @@ public class AccessGuard {
 
     public boolean isSelf(Long userId) {
         return userId != null && userId.equals(currentUserId());
+    }
+
+    // An unlinked worker account can only be claimed by whoever created it, never by another owner
+    public boolean createdUser(Long userId) {
+        Long me = currentUserId();
+        return me != null && userId != null && userRepository.findById(userId)
+                .map(user -> user.getCreatedBy() != null && me.equals(user.getCreatedBy().getId()))
+                .orElse(false);
     }
 
     public boolean ownsEstablishment(Long establishmentId) {

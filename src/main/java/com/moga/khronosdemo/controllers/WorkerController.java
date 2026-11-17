@@ -22,7 +22,7 @@ public class WorkerController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsEstablishment(#request.establishmentId())")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or (@access.ownsEstablishment(#request.establishmentId()) and @access.createdUser(#request.userId()))")
     public WorkerResponseDTO create(@Valid @RequestBody WorkerRequestDTO request) {
         return workerService.create(request);
     }

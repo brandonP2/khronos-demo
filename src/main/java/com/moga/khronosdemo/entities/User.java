@@ -2,6 +2,8 @@ package com.moga.khronosdemo.entities;
 
 import com.moga.khronosdemo.entities.enums.Role;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.Instant;
 
@@ -34,6 +36,12 @@ public class User {
 
     // Tokens issued before this moment are rejected, so changing the password signs out other sessions
     private Instant credentialsChangedAt;
+
+    // Who created this account. Owners may only link worker accounts they created themselves
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
+    private User createdBy;
 
     public User() {
     }
@@ -118,6 +126,14 @@ public class User {
 
     public void setCredentialsChangedAt(Instant credentialsChangedAt) {
         this.credentialsChangedAt = credentialsChangedAt;
+    }
+
+    public User getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(User createdBy) {
+        this.createdBy = createdBy;
     }
 
 }

@@ -33,15 +33,17 @@ public class UserController {
     @PostMapping("/create")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAnyRole('PLATFORM_ADMIN')")
-    public UserResponseDTO createUser(@Valid @RequestBody UserRequestDTO request, @RequestParam Role role) {
-        return userService.createUser(request, role);
+    public UserResponseDTO createUser(@Valid @RequestBody UserRequestDTO request, @RequestParam Role role,
+                                      @AuthenticationPrincipal SecurityUser principal) {
+        return userService.createUser(request, role, principal.getId());
     }
 
     @PostMapping("/create/worker")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAnyRole('PLATFORM_ADMIN', 'OWNER')")
-    public UserResponseDTO createWorker(@Valid @RequestBody UserRequestDTO request) {
-        return userService.createWorker(request);
+    public UserResponseDTO createWorker(@Valid @RequestBody UserRequestDTO request,
+                                        @AuthenticationPrincipal SecurityUser principal) {
+        return userService.createWorker(request, principal.getId());
     }
 
     @GetMapping

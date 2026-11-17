@@ -10,9 +10,9 @@ import java.util.List;
 
 public interface UserService {
 
-    UserResponseDTO createWorker(UserRequestDTO request);
+    UserResponseDTO createWorker(UserRequestDTO request, Long creatorId);
 
-    UserResponseDTO createUser(UserRequestDTO request, Role role);
+    UserResponseDTO createUser(UserRequestDTO request, Role role, Long creatorId);
 
     UserResponseDTO findById(Long id);
 

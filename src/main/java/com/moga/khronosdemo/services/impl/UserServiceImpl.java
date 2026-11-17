@@ -41,16 +41,16 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public UserResponseDTO createUser(UserRequestDTO request, Role role) {
-        return createWithRole(request, role);
+    public UserResponseDTO createUser(UserRequestDTO request, Role role, Long creatorId) {
+        return createWithRole(request, role, creatorId);
     }
 
     @Override
-    public UserResponseDTO createWorker(UserRequestDTO request) {
-        return createWithRole(request, Role.WORKER);
+    public UserResponseDTO createWorker(UserRequestDTO request, Long creatorId) {
+        return createWithRole(request, Role.WORKER, creatorId);
     }
 
-    private UserResponseDTO createWithRole(UserRequestDTO request, Role role) {
+    private UserResponseDTO createWithRole(UserRequestDTO request, Role role, Long creatorId) {
 
         if (userRepository.existsByUsername(request.username())) {
             throw new BusinessRuleException("Username already in use");
@@ -65,6 +65,9 @@ public class UserServiceImpl implements UserService {
         }
 
         User user = userMapper.toEntity(request, role);
+        if (creatorId != null) {
+            user.setCreatedBy(userRepository.getReferenceById(creatorId));
+        }
 
         return userMapper.toResponse(userRepository.save(user));
 
