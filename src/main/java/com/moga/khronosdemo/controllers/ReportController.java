@@ -2,10 +2,13 @@ package com.moga.khronosdemo.controllers;
 
 import com.moga.khronosdemo.dtos.response.BusinessSummaryResponseDTO;
 import com.moga.khronosdemo.dtos.response.HoursReportResponseDTO;
+import com.moga.khronosdemo.dtos.response.InventoryReportResponseDTO;
 import com.moga.khronosdemo.dtos.response.WorkerDaysReportResponseDTO;
 import com.moga.khronosdemo.entities.enums.Role;
 import com.moga.khronosdemo.security.SecurityUser;
 import com.moga.khronosdemo.services.BusinessSummaryService;
+import com.moga.khronosdemo.services.CsvFile;
+import com.moga.khronosdemo.services.InventoryReportService;
 import com.moga.khronosdemo.services.ReportService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
@@ -24,8 +27,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 
 /**
- * Planned against worked hours and staff costs, and the business summary (sales, expenses, staff cost
- * and margin), as JSON or as CSV files to download. from and to are required and cover at most 366 days.
+ * Planned against worked hours and staff costs, the business summary (sales, expenses, staff cost and
+ * margin) and the inventory, as JSON or as CSV files to download. from and to are required and cover at
+ * most 366 days, except for the stock as of now (inventory.csv).
  */
 @RestController
 @RequestMapping("/api/reports")
@@ -33,10 +37,13 @@ public class ReportController {
 
     private final ReportService reportService;
     private final BusinessSummaryService businessSummaryService;
+    private final InventoryReportService inventoryReportService;
 
-    public ReportController(ReportService reportService, BusinessSummaryService businessSummaryService) {
+    public ReportController(ReportService reportService, BusinessSummaryService businessSummaryService,
+                            InventoryReportService inventoryReportService) {
         this.reportService = reportService;
         this.businessSummaryService = businessSummaryService;
+        this.inventoryReportService = inventoryReportService;
     }
 
     @GetMapping("/establishment/{establishmentId}/hours")
@@ -121,6 +128,33 @@ public class ReportController {
                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return csv(businessSummaryService.summaryCsv(establishmentId, from, to), "resumen_" + from + "_" + to + ".csv");
+    }
+
+    // The stock as of now and the values of the movements of the range
+    @GetMapping("/establishment/{establishmentId}/inventory")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsEstablishment(#establishmentId)")
+    public InventoryReportResponseDTO inventory(@PathVariable Long establishmentId,
+                                                @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                                @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return inventoryReportService.inventory(establishmentId, from, to);
+    }
+
+    // One row per active product with its stock as of now, by category and then name
+    @GetMapping("/establishment/{establishmentId}/inventory.csv")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsEstablishment(#establishmentId)")
+    public ResponseEntity<byte[]> inventoryCsv(@PathVariable Long establishmentId) {
+        CsvFile file = inventoryReportService.inventoryCsv(establishmentId);
+        return csv(file.content(), file.filename());
+    }
+
+    // One row per stock movement of the range, oldest first
+    @GetMapping("/establishment/{establishmentId}/stock-movements.csv")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsEstablishment(#establishmentId)")
+    public ResponseEntity<byte[]> stockMovementsCsv(@PathVariable Long establishmentId,
+                                                    @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                                    @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return csv(inventoryReportService.stockMovementsCsv(establishmentId, from, to),
+                "movimientos-stock_" + from + "_" + to + ".csv");
     }
 
     private static ResponseEntity<byte[]> csv(byte[] body, String filename) {

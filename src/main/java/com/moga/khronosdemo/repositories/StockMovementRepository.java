@@ -46,7 +46,32 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, Lo
                                             @Param("productId") Long productId,
                                             @Param("type") StockMovementType type);
 
+    // For each product and type with movements dated from 'from' to 'to', both included: the quantity and
+    // the value added up, each movement's value being quantity x its unit cost rounded to cents, signed like
+    // the quantity. The value is null when none of them had a cost. One query, however long the range
+    @Query("""
+            select m.product.id as productId, m.type as type, sum(m.quantity) as quantity,
+                   sum(round(m.quantity * m.unitCost, 2)) as value
+            from StockMovement m
+            where m.establishment.id = :establishmentId and m.date >= :from and m.date <= :to
+            group by m.product.id, m.type
+            """)
+    List<ProductTypeTotal> sumByProductAndType(@Param("establishmentId") Long establishmentId,
+                                               @Param("from") LocalDate from,
+                                               @Param("to") LocalDate to);
+
     boolean existsByProduct_Id(Long productId);
+
+    interface ProductTypeTotal {
+
+        Long getProductId();
+
+        StockMovementType getType();
+
+        BigDecimal getQuantity();
+
+        BigDecimal getValue();
+    }
 
     interface ProductStock {
 

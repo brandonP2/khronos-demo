@@ -4,6 +4,8 @@ import com.moga.khronosdemo.dtos.response.BusinessSummaryResponseDTO;
 import com.moga.khronosdemo.dtos.response.CashClosingResponseDTO;
 import com.moga.khronosdemo.dtos.response.ExpenseResponseDTO;
 import com.moga.khronosdemo.dtos.response.HoursReportResponseDTO;
+import com.moga.khronosdemo.dtos.response.ProductResponseDTO;
+import com.moga.khronosdemo.dtos.response.StockMovementResponseDTO;
 import com.moga.khronosdemo.dtos.response.SummaryDayResponseDTO;
 import com.moga.khronosdemo.dtos.response.WorkerHoursResponseDTO;
 import com.moga.khronosdemo.entities.TimeEntry;
@@ -12,6 +14,9 @@ import com.moga.khronosdemo.entities.enums.CashClosingStatus;
 import com.moga.khronosdemo.entities.enums.DayClosingStatus;
 import com.moga.khronosdemo.entities.enums.ExpenseCategory;
 import com.moga.khronosdemo.entities.enums.PaymentMethod;
+import com.moga.khronosdemo.entities.enums.ProductCategory;
+import com.moga.khronosdemo.entities.enums.ProductUnit;
+import com.moga.khronosdemo.entities.enums.StockMovementType;
 import com.moga.khronosdemo.entities.enums.TimeEntrySource;
 import com.moga.khronosdemo.entities.enums.TimeEntryStatus;
 
@@ -28,8 +33,8 @@ import static com.moga.khronosdemo.services.impl.CsvWriter.text;
 
 /**
  * The CSV exports, with Spanish headers and values for spreadsheets set to Spanish: dates as
- * dd/MM/yyyy, times in the establishment's time zone and amounts with a decimal comma. Text that users
- * typed goes through CsvWriter.text, so it can't run as a formula.
+ * dd/MM/yyyy, times in the establishment's time zone and amounts and quantities with a decimal comma.
+ * Text that users typed goes through CsvWriter.text, so it can't run as a formula.
  */
 final class ReportCsvFormatter {
 
@@ -61,6 +66,16 @@ final class ReportCsvFormatter {
     private static final String[] SUMMARY_HEADER = {
             "Fecha", "Ventas (EUR)", "Gastos (EUR)", "Coste de personal (EUR)", "Margen (EUR)", "Estado del cierre",
             "Descuadre (EUR)"
+    };
+
+    private static final String[] INVENTORY_HEADER = {
+            "Producto", "Categoría", "Unidad", "Proveedor", "Stock actual", "Stock mínimo", "Bajo mínimo",
+            "Coste unitario (EUR)", "Valor del stock (EUR)"
+    };
+
+    private static final String[] STOCK_MOVEMENTS_HEADER = {
+            "Fecha", "Producto", "Unidad", "Tipo", "Cantidad", "Coste unitario (EUR)", "Valor (EUR)", "Stock después",
+            "Motivo", "Pedido", "Registrado el", "Registrado por"
     };
 
     // One person's entries together, in the order they happened
@@ -178,6 +193,45 @@ final class ReportCsvFormatter {
         return csv.toBytes();
     }
 
+    // One row per product, in the order given
+    static byte[] inventory(List<ProductResponseDTO> products) {
+        CsvWriter csv = new CsvWriter().row(INVENTORY_HEADER);
+        for (ProductResponseDTO product : products) {
+            csv.row(
+                    text(product.name()),
+                    category(product.category()),
+                    unit(product.unit()),
+                    text(product.supplierName()),
+                    quantity(product.currentStock()),
+                    quantity(product.minStock()),
+                    yesNo(product.isLowStock()),
+                    money(product.unitCost()),
+                    money(product.stockValue()));
+        }
+        return csv.toBytes();
+    }
+
+    // One row per movement, in the order given; the time it was recorded in the establishment's time zone
+    static byte[] stockMovements(List<StockMovementResponseDTO> movements, ZoneId zone) {
+        CsvWriter csv = new CsvWriter().row(STOCK_MOVEMENTS_HEADER);
+        for (StockMovementResponseDTO movement : movements) {
+            csv.row(
+                    movement.date().format(DATE),
+                    text(movement.productName()),
+                    unit(movement.unit()),
+                    movementType(movement.type()),
+                    quantity(movement.quantity()),
+                    money(movement.unitCost()),
+                    money(movement.value()),
+                    quantity(movement.stockAfter()),
+                    text(movement.reason()),
+                    movement.purchaseOrderId() != null ? String.valueOf(movement.purchaseOrderId()) : "",
+                    dateTime(movement.createdAt(), zone),
+                    text(movement.createdByName()));
+        }
+        return csv.toBytes();
+    }
+
     private static String dateTime(Instant instant, ZoneId zone) {
         return instant != null ? instant.atZone(zone).format(DATE_TIME) : "";
     }
@@ -189,6 +243,11 @@ final class ReportCsvFormatter {
 
     private static String money(BigDecimal amount) {
         return amount != null ? amount.setScale(2, RoundingMode.HALF_UP).toPlainString().replace('.', ',') : "";
+    }
+
+    // Without trailing zeros: 2.500 is "2,5" and 3.000 is "3"
+    private static String quantity(BigDecimal quantity) {
+        return quantity != null ? quantity.stripTrailingZeros().toPlainString().replace('.', ',') : "";
     }
 
     private static String yesNo(Boolean value) {
@@ -205,6 +264,40 @@ final class ReportCsvFormatter {
             case MARKETING -> "Marketing";
             case TAXES -> "Impuestos";
             case OTHER -> "Otros";
+        };
+    }
+
+    private static String category(ProductCategory category) {
+        return switch (category) {
+            case SPIRITS -> "Destilados";
+            case BEER -> "Cerveza";
+            case WINE -> "Vino";
+            case SOFT_DRINKS -> "Refrescos y agua";
+            case COFFEE -> "Café";
+            case FOOD -> "Comida";
+            case SUPPLIES -> "Material";
+            case OTHER -> "Otros";
+        };
+    }
+
+    private static String unit(ProductUnit unit) {
+        return switch (unit) {
+            case BOTTLE -> "Botella";
+            case UNIT -> "Unidad";
+            case KG -> "kg";
+            case L -> "l";
+            case BOX -> "Caja";
+            case KEG -> "Barril";
+        };
+    }
+
+    private static String movementType(StockMovementType type) {
+        return switch (type) {
+            case PURCHASE -> "Compra";
+            case WASTE -> "Merma";
+            case CONSUMPTION -> "Consumo";
+            case ADJUSTMENT -> "Ajuste";
+            case COUNT -> "Recuento";
         };
     }
 

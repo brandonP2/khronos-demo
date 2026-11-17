@@ -37,8 +37,8 @@ public class ProductServiceImpl implements ProductService {
 
     private static final String UNIQUE_NAME_INDEX = "ux_products_establishment_name";
 
-    // By category in the order the enum lists them, then by name whatever its case
-    private static final Comparator<Product> BY_CATEGORY_THEN_NAME = Comparator
+    // By category in the order the enum lists them, then by name whatever its case; also the inventory report's
+    static final Comparator<Product> BY_CATEGORY_THEN_NAME = Comparator
             .comparing(Product::getCategory)
             .thenComparing(Product::getName, String.CASE_INSENSITIVE_ORDER)
             .thenComparing(Product::getId);
