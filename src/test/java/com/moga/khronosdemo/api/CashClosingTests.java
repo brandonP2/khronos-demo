@@ -158,7 +158,9 @@ class CashClosingTests extends IntegrationTest {
         mockMvc.perform(postJson("/api/cash-closings", closing(venue, FRI, "770.50")).with(as(owner)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("A cash closing already exists for 2030-05-10 at this"
-                        + " establishment; edit that one instead"));
+                        + " establishment; edit that one instead"))
+                .andExpect(jsonPath("$.code").value("CASH_CLOSING_EXISTS"))
+                .andExpect(jsonPath("$.details.date").value(FRI));
 
         create(venue, THU, "748");
         create(createEstablishment(owner), FRI, "748");
@@ -170,7 +172,9 @@ class CashClosingTests extends IntegrationTest {
         clock.setNow(Instant.parse("2030-05-10T12:00:00Z"));
         mockMvc.perform(postJson("/api/cash-closings", closing(venue, SAT, "770.50")).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("The business date cannot be in the future"));
+                .andExpect(jsonPath("$.message").value("The business date cannot be in the future"))
+                .andExpect(jsonPath("$.code").value("FUTURE_DATE"))
+                .andExpect(jsonPath("$.details").doesNotExist());
 
         // At 12:00 UTC it is already 02:00 on Saturday in Kiritimati (UTC+14)
         Establishment kiritimati = createEstablishment(owner);
@@ -231,12 +235,14 @@ class CashClosingTests extends IntegrationTest {
 
         mockMvc.perform(putJson("/api/cash-closings/{id}/close", "{}", id).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(message));
+                .andExpect(jsonPath("$.message").value(message))
+                .andExpect(jsonPath("$.code").value("DIFFERENCE_REASON_REQUIRED"));
         mockMvc.perform(putJson("/api/cash-closings/{id}/close", """
                         { "differenceReason": "   " }
                         """, id).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(message));
+                .andExpect(jsonPath("$.message").value(message))
+                .andExpect(jsonPath("$.code").value("DIFFERENCE_REASON_REQUIRED"));
         assertFalse(cashClosingRepository.findById(id).orElseThrow().isClosed());
 
         mockMvc.perform(putJson("/api/cash-closings/{id}/close", """
@@ -262,24 +268,34 @@ class CashClosingTests extends IntegrationTest {
 
         String locked = "The cash closing of 2030-05-10 is closed; reopen it to add, change or delete cash expenses"
                 + " of that day";
-        // Adding, changing, deleting or moving in a cash expense of that day
+        // Adding, changing, deleting or moving in a cash expense of that day; the closed day comes in details
         mockMvc.perform(postJson("/api/expenses", expenseJson(FRI, "CASH", "1")).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(locked));
+                .andExpect(jsonPath("$.message").value(locked))
+                .andExpect(jsonPath("$.code").value("CASH_DAY_CLOSED"))
+                .andExpect(jsonPath("$.details.date").value(FRI));
         mockMvc.perform(putJson("/api/expenses/{id}", expenseJson(FRI, "CASH", "11"), cashFriday).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(locked));
+                .andExpect(jsonPath("$.message").value(locked))
+                .andExpect(jsonPath("$.code").value("CASH_DAY_CLOSED"));
         mockMvc.perform(putJson("/api/expenses/{id}", expenseJson(FRI, "CARD", "10"), cashFriday).with(as(owner)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CASH_DAY_CLOSED"));
         mockMvc.perform(putJson("/api/expenses/{id}", expenseJson(THU, "CASH", "10"), cashFriday).with(as(owner)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CASH_DAY_CLOSED"))
+                .andExpect(jsonPath("$.details.date").value(FRI));
         mockMvc.perform(deleteJson("/api/expenses/{id}", cashFriday).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(locked));
+                .andExpect(jsonPath("$.message").value(locked))
+                .andExpect(jsonPath("$.code").value("CASH_DAY_CLOSED"));
         mockMvc.perform(putJson("/api/expenses/{id}", expenseJson(FRI, "CASH", "50"), cardFriday).with(as(owner)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CASH_DAY_CLOSED"));
         mockMvc.perform(putJson("/api/expenses/{id}", expenseJson(FRI, "CASH", "5"), cashThursday).with(as(owner)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CASH_DAY_CLOSED"))
+                .andExpect(jsonPath("$.details.date").value(FRI));
 
         // Other payment methods, and other days, are not locked
         expense(FRI, "TRANSFER", "100");
@@ -297,10 +313,13 @@ class CashClosingTests extends IntegrationTest {
                 .andExpect(jsonPath("$.difference").value(0.0));
         mockMvc.perform(putJson("/api/cash-closings/{id}", closing(venue, FRI, "1"), id).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("A closed cash closing cannot be edited; reopen it first"));
+                .andExpect(jsonPath("$.message").value("A closed cash closing cannot be edited; reopen it first"))
+                .andExpect(jsonPath("$.code").value("CASH_CLOSING_CLOSED"))
+                .andExpect(jsonPath("$.details").doesNotExist());
         mockMvc.perform(putJson("/api/cash-closings/{id}/close", "{}", id).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("The cash closing is already closed"));
+                .andExpect(jsonPath("$.message").value("The cash closing is already closed"))
+                .andExpect(jsonPath("$.code").value("CASH_CLOSING_CLOSED"));
 
         // Reopened, it is a draft again and follows its expenses
         mockMvc.perform(putJson("/api/cash-closings/{id}/reopen", """
@@ -315,7 +334,8 @@ class CashClosingTests extends IntegrationTest {
                         { "reason": "Again" }
                         """, id).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("The cash closing is not closed"));
+                .andExpect(jsonPath("$.message").value("The cash closing is not closed"))
+                .andExpect(jsonPath("$.code").value("CASH_CLOSING_NOT_CLOSED"));
         expense(FRI, "CASH", "2");
         mockMvc.perform(getJson("/api/cash-closings/{id}", id).with(as(owner)))
                 .andExpect(jsonPath("$.cashExpenses").value(12.0))
@@ -390,7 +410,8 @@ class CashClosingTests extends IntegrationTest {
         mockMvc.perform(deleteJson("/api/cash-closings/{id}", closed).with(as(owner)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("A closed cash closing cannot be deleted; reopen it to correct"
-                        + " it instead"));
+                        + " it instead"))
+                .andExpect(jsonPath("$.code").value("CASH_CLOSING_CLOSED"));
         mockMvc.perform(putJson("/api/cash-closings/{id}/reopen", """
                         { "reason": "Wrong card total" }
                         """, closed).with(as(owner)))
@@ -398,7 +419,8 @@ class CashClosingTests extends IntegrationTest {
         mockMvc.perform(deleteJson("/api/cash-closings/{id}", closed).with(as(admin)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("A cash closing that has been closed before cannot be deleted;"
-                        + " correct it and close it again instead"));
+                        + " correct it and close it again instead"))
+                .andExpect(jsonPath("$.code").value("CASH_CLOSING_WAS_CLOSED"));
         assertTrue(cashClosingRepository.existsById(closed));
         assertEquals(3, cashClosingChangeRepository.count());
 

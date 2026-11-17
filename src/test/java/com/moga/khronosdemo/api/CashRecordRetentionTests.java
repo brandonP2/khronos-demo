@@ -65,7 +65,10 @@ class CashRecordRetentionTests extends IntegrationTest {
                 .andExpect(jsonPath("$.message").value(message));
         mockMvc.perform(deleteJson("/api/establishments/{id}", venueWithExpense.getId()).with(as(admin)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(message));
+                .andExpect(jsonPath("$.message").value(message))
+                // A conflict without a code of its own carries neither code nor details
+                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.details").doesNotExist());
 
         assertTrue(establishmentRepository.existsById(venueWithClosing.getId()));
         assertTrue(establishmentRepository.existsById(venueWithExpense.getId()));

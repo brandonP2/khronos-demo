@@ -41,9 +41,10 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), request, null);
     }
 
+    // Some rules carry a stable code, and details of what they are about, for clients to act on
     @ExceptionHandler(BusinessRuleException.class)
     public ResponseEntity<ErrorResponseDTO> handleBusinessRule(BusinessRuleException ex, HttpServletRequest request) {
-        return build(HttpStatus.CONFLICT, ex.getMessage(), request, null);
+        return build(HttpStatus.CONFLICT, ex.getMessage(), ex.getCode(), request, null, ex.getDetails());
     }
 
     @ExceptionHandler(InvalidRequestException.class)
@@ -162,6 +163,12 @@ public class GlobalExceptionHandler {
 
     private ResponseEntity<ErrorResponseDTO> build(HttpStatus status, String message, ErrorCode code,
                                                    HttpServletRequest request, Map<String, String> fieldErrors) {
+        return build(status, message, code, request, fieldErrors, null);
+    }
+
+    private ResponseEntity<ErrorResponseDTO> build(HttpStatus status, String message, ErrorCode code,
+                                                   HttpServletRequest request, Map<String, String> fieldErrors,
+                                                   Map<String, String> details) {
         ErrorResponseDTO body = new ErrorResponseDTO(
                 Instant.now(),
                 status.value(),
@@ -169,7 +176,8 @@ public class GlobalExceptionHandler {
                 message,
                 request.getRequestURI(),
                 fieldErrors,
-                code
+                code,
+                details
         );
         return ResponseEntity.status(status).body(body);
     }

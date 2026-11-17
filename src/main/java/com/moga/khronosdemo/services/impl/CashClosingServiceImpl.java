@@ -4,6 +4,7 @@ import com.moga.khronosdemo.config.CashClosingProperties;
 import com.moga.khronosdemo.dtos.request.CashClosingRequestDTO;
 import com.moga.khronosdemo.dtos.response.CashClosingChangeResponseDTO;
 import com.moga.khronosdemo.dtos.response.CashClosingResponseDTO;
+import com.moga.khronosdemo.dtos.response.ErrorCode;
 import com.moga.khronosdemo.entities.CashClosing;
 import com.moga.khronosdemo.entities.CashClosingChange;
 import com.moga.khronosdemo.entities.Establishment;
@@ -100,7 +101,7 @@ public class CashClosingServiceImpl implements CashClosingService {
         Establishment establishment = cashRecordLock.lockEstablishment(request.establishmentId());
         LocalDate businessDate = request.businessDate();
         if (businessDate.isAfter(today(establishment))) {
-            throw new BusinessRuleException("The business date cannot be in the future");
+            throw new BusinessRuleException("The business date cannot be in the future", ErrorCode.FUTURE_DATE);
         }
         if (cashClosingRepository.existsByEstablishment_IdAndBusinessDate(establishment.getId(), businessDate)) {
             throw alreadyExists(businessDate);
@@ -125,7 +126,8 @@ public class CashClosingServiceImpl implements CashClosingService {
     public CashClosingResponseDTO update(Long id, CashClosingRequestDTO request, Long actorId) {
         CashClosing closing = cashRecordLock.lockCashClosing(id);
         if (closing.isClosed()) {
-            throw new BusinessRuleException("A closed cash closing cannot be edited; reopen it first");
+            throw new BusinessRuleException("A closed cash closing cannot be edited; reopen it first",
+                    ErrorCode.CASH_CLOSING_CLOSED);
         }
         cashClosingMapper.updateEntity(closing, request);
         closing.setUpdatedAt(auditNow());
@@ -137,7 +139,7 @@ public class CashClosingServiceImpl implements CashClosingService {
     public CashClosingResponseDTO close(Long id, String differenceReason, Long actorId) {
         CashClosing closing = cashRecordLock.lockCashClosing(id);
         if (closing.isClosed()) {
-            throw new BusinessRuleException("The cash closing is already closed");
+            throw new BusinessRuleException("The cash closing is already closed", ErrorCode.CASH_CLOSING_CLOSED);
         }
         CashClosing.Figures figures = closing.figures(cashExpensesOf(closing));
         String reason = clean(differenceReason);
@@ -145,7 +147,8 @@ public class CashClosingServiceImpl implements CashClosingService {
         if (reason == null && figures.difference().abs().compareTo(threshold) > 0) {
             throw new BusinessRuleException("The cash difference of " + figures.difference().toPlainString()
                     + " EUR is larger than the " + threshold.setScale(2).toPlainString()
-                    + " EUR allowed without a reason; send a differenceReason to close the day");
+                    + " EUR allowed without a reason; send a differenceReason to close the day",
+                    ErrorCode.DIFFERENCE_REASON_REQUIRED);
         }
         closing.close(figures, reason, getUser(actorId), auditNow());
         return record(closing, CashClosingAction.CLOSED, actorId, reason);
@@ -156,7 +159,7 @@ public class CashClosingServiceImpl implements CashClosingService {
     public CashClosingResponseDTO reopen(Long id, String reason, Long actorId) {
         CashClosing closing = cashRecordLock.lockCashClosing(id);
         if (!closing.isClosed()) {
-            throw new BusinessRuleException("The cash closing is not closed");
+            throw new BusinessRuleException("The cash closing is not closed", ErrorCode.CASH_CLOSING_NOT_CLOSED);
         }
         closing.reopen(auditNow());
         return record(closing, CashClosingAction.REOPENED, actorId, reason);
@@ -168,11 +171,12 @@ public class CashClosingServiceImpl implements CashClosingService {
     public void delete(Long id) {
         CashClosing closing = cashRecordLock.lockCashClosing(id);
         if (closing.isClosed()) {
-            throw new BusinessRuleException("A closed cash closing cannot be deleted; reopen it to correct it instead");
+            throw new BusinessRuleException("A closed cash closing cannot be deleted; reopen it to correct it instead",
+                    ErrorCode.CASH_CLOSING_CLOSED);
         }
         if (cashClosingChangeRepository.existsByCashClosing_IdAndAction(id, CashClosingAction.CLOSED)) {
             throw new BusinessRuleException("A cash closing that has been closed before cannot be deleted;"
-                    + " correct it and close it again instead");
+                    + " correct it and close it again instead", ErrorCode.CASH_CLOSING_WAS_CLOSED);
         }
         cashClosingChangeRepository.deleteByCashClosing_Id(id);
         cashClosingRepository.delete(closing);
@@ -226,7 +230,8 @@ public class CashClosingServiceImpl implements CashClosingService {
 
     private static BusinessRuleException alreadyExists(LocalDate businessDate) {
         return new BusinessRuleException("A cash closing already exists for " + businessDate
-                + " at this establishment; edit that one instead");
+                + " at this establishment; edit that one instead", ErrorCode.CASH_CLOSING_EXISTS,
+                Map.of("date", businessDate.toString()));
     }
 
     // "Today" is the establishment's local date

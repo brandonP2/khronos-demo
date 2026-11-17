@@ -1,6 +1,7 @@
 package com.moga.khronosdemo.services.impl;
 
 import com.moga.khronosdemo.dtos.request.ExpenseRequestDTO;
+import com.moga.khronosdemo.dtos.response.ErrorCode;
 import com.moga.khronosdemo.dtos.response.ExpenseResponseDTO;
 import com.moga.khronosdemo.entities.Establishment;
 import com.moga.khronosdemo.entities.Expense;
@@ -23,6 +24,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Expenses entered by hand. Cash expenses come out of the till, so they lower the cash a closing
@@ -108,14 +110,14 @@ public class ExpenseServiceImpl implements ExpenseService {
         if (cashClosingRepository.existsByEstablishment_IdAndBusinessDateAndStatus(establishmentId, date,
                 CashClosingStatus.CLOSED)) {
             throw new BusinessRuleException("The cash closing of " + date + " is closed; reopen it to add, change"
-                    + " or delete cash expenses of that day");
+                    + " or delete cash expenses of that day", ErrorCode.CASH_DAY_CLOSED, Map.of("date", date.toString()));
         }
     }
 
     // "Today" is the establishment's local date, so a venue in the Canaries can't enter tomorrow's expenses
     private void checkNotInFuture(Establishment establishment, LocalDate date) {
         if (date.isAfter(LocalDate.ofInstant(clock.instant(), establishment.getZoneId()))) {
-            throw new BusinessRuleException("The expense date cannot be in the future");
+            throw new BusinessRuleException("The expense date cannot be in the future", ErrorCode.FUTURE_DATE);
         }
     }
 

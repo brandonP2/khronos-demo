@@ -3,6 +3,7 @@ package com.moga.khronosdemo.services;
 import com.moga.khronosdemo.dtos.request.CashClosingRequestDTO;
 import com.moga.khronosdemo.dtos.request.ExpenseRequestDTO;
 import com.moga.khronosdemo.dtos.response.CashClosingResponseDTO;
+import com.moga.khronosdemo.dtos.response.ErrorCode;
 import com.moga.khronosdemo.entities.CashClosing;
 import com.moga.khronosdemo.entities.Establishment;
 import com.moga.khronosdemo.entities.User;
@@ -24,6 +25,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
@@ -169,6 +171,8 @@ class CashClosingLockingTests extends IntegrationTest {
         assertInstanceOf(BusinessRuleException.class, failure.getCause());
         assertEquals("A cash closing already exists for 2030-05-10 at this establishment; edit that one instead",
                 failure.getCause().getMessage());
+        assertEquals(ErrorCode.CASH_CLOSING_EXISTS, ((BusinessRuleException) failure.getCause()).getCode());
+        assertEquals(Map.of("date", "2030-05-10"), ((BusinessRuleException) failure.getCause()).getDetails());
         assertEquals(1, cashClosingRepository.count());
 
         assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update("""

@@ -100,7 +100,8 @@ class ExpenseTests extends IntegrationTest {
     void theDateCannotBeInTheFutureOfTheVenuesTimeZone() throws Exception {
         mockMvc.perform(postJson("/api/expenses", body(venue.getId(), "2030-05-11", "CARD", "10")).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("The expense date cannot be in the future"));
+                .andExpect(jsonPath("$.message").value("The expense date cannot be in the future"))
+                .andExpect(jsonPath("$.code").value("FUTURE_DATE"));
 
         // At 12:00 UTC it is already 02:00 on Saturday in Kiritimati (UTC+14)
         venue.setTimeZone("Pacific/Kiritimati");
@@ -111,7 +112,8 @@ class ExpenseTests extends IntegrationTest {
                 .andReturn(), "$.id");
         mockMvc.perform(putJson("/api/expenses/{id}", body(null, "2030-05-12", "CARD", "10"), id).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("The expense date cannot be in the future"));
+                .andExpect(jsonPath("$.message").value("The expense date cannot be in the future"))
+                .andExpect(jsonPath("$.code").value("FUTURE_DATE"));
     }
 
     @Test

@@ -19,5 +19,29 @@ public enum ErrorCode {
     AUTHENTICATION_REQUIRED,
 
     /** 429 at login while the username and IP, or the IP alone, is blocked; Retry-After says for how long. */
-    TOO_MANY_ATTEMPTS
+    TOO_MANY_ATTEMPTS,
+
+    /** 409 when the establishment already has a cash closing for that business day; details.date is the day. */
+    CASH_CLOSING_EXISTS,
+
+    /** 409 when a closed cash closing is edited, deleted or closed again. */
+    CASH_CLOSING_CLOSED,
+
+    /** 409 when a cash closing that is not closed is reopened. */
+    CASH_CLOSING_NOT_CLOSED,
+
+    /** 409 when a draft that was closed before, and then reopened, is deleted. */
+    CASH_CLOSING_WAS_CLOSED,
+
+    /** 409 when a day is closed with a cash difference over the threshold and no differenceReason. */
+    DIFFERENCE_REASON_REQUIRED,
+
+    /**
+     * 409 when a cash expense is added, changed, moved or deleted on a day whose cash closing is closed;
+     * details.date is that day.
+     */
+    CASH_DAY_CLOSED,
+
+    /** 409 when a cash closing's business day or an expense's date is after today in the establishment's time zone. */
+    FUTURE_DATE
 }

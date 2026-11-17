@@ -269,13 +269,18 @@ A closing is a `DRAFT` until it is closed. A draft can be edited and its figures
 
 Every creation, edit, close and reopen adds a row to the closing's history (`GET /{id}/history`, oldest first) with the action (`CREATED`, `UPDATED`, `CLOSED`, `REOPENED`), who did it, when, the reason (the `differenceReason` when closing, the `reason` when reopening) and the totals right after. History rows can't be changed: a database trigger rejects updates.
 
-| Request | When it answers 409 |
-|---|---|
-| `POST` | `A cash closing already exists for 2026-11-20 at this establishment; edit that one instead`, `The business date cannot be in the future` (today is the establishment's local date) |
-| `PUT /{id}` | `A closed cash closing cannot be edited; reopen it first` |
-| `PUT /{id}/close` | `The cash closing is already closed`, `The cash difference of -7.50 EUR is larger than the 5.00 EUR allowed without a reason; send a differenceReason to close the day` |
-| `PUT /{id}/reopen` | `The cash closing is not closed` |
-| `DELETE /{id}` | `A closed cash closing cannot be deleted; reopen it to correct it instead`, `A cash closing that has been closed before cannot be deleted; correct it and close it again instead` |
+Each of these 409s carries a stable `code` (see [Error format](#error-format)); clients should rely on it rather than on the message.
+
+| Request | When it answers 409 | `code` |
+|---|---|---|
+| `POST` | `A cash closing already exists for 2026-11-20 at this establishment; edit that one instead` | `CASH_CLOSING_EXISTS`, with `details.date` |
+| `POST` | `The business date cannot be in the future` (today is the establishment's local date) | `FUTURE_DATE` |
+| `PUT /{id}` | `A closed cash closing cannot be edited; reopen it first` | `CASH_CLOSING_CLOSED` |
+| `PUT /{id}/close` | `The cash closing is already closed` | `CASH_CLOSING_CLOSED` |
+| `PUT /{id}/close` | `The cash difference of -7.50 EUR is larger than the 5.00 EUR allowed without a reason; send a differenceReason to close the day` | `DIFFERENCE_REASON_REQUIRED` |
+| `PUT /{id}/reopen` | `The cash closing is not closed` | `CASH_CLOSING_NOT_CLOSED` |
+| `DELETE /{id}` | `A closed cash closing cannot be deleted; reopen it to correct it instead` | `CASH_CLOSING_CLOSED` |
+| `DELETE /{id}` | `A cash closing that has been closed before cannot be deleted; correct it and close it again instead` | `CASH_CLOSING_WAS_CLOSED` |
 
 Only a draft that was never closed can be deleted, and its history goes with it. A day that was closed once stays on record: it can be reopened and corrected, not deleted.
 
@@ -287,10 +292,10 @@ Requests on the same establishment's cash take turns: every change to a closing 
 
 - `category`: `SUPPLIES` (food and drink stock), `RENT`, `UTILITIES` (electricity, water, gas, internet), `PAYROLL` (wages and social security), `MAINTENANCE`, `MARKETING`, `TAXES`, `OTHER`.
 - `paymentMethod`: `CASH`, `CARD`, `TRANSFER`, `OTHER`.
-- `description` 1 to 150 characters, `supplier` at most 100, `notes` at most 500, `amount` more than 0. The date can't be later than today in the establishment's time zone (**409** `The expense date cannot be in the future`). `establishmentId` is only read on creation.
+- `description` 1 to 150 characters, `supplier` at most 100, `notes` at most 500, `amount` more than 0. The date can't be later than today in the establishment's time zone (**409** `The expense date cannot be in the future`, `code` `FUTURE_DATE`). `establishmentId` is only read on creation.
 - The listing is newest first, then by id, with optional `from`, `to` and `category` filters.
 
-Cash expenses come out of the till, so while a day's closing is `CLOSED` its cash expenses can't be added, changed, moved in or out, or deleted: **409** `The cash closing of 2026-11-20 is closed; reopen it to add, change or delete cash expenses of that day`. An expense counts as cash if it was paid in cash before the change or will be after it. Other payment methods are never locked.
+Cash expenses come out of the till, so while a day's closing is `CLOSED` its cash expenses can't be added, changed, moved in or out, or deleted: **409** `The cash closing of 2026-11-20 is closed; reopen it to add, change or delete cash expenses of that day`, with `code` `CASH_DAY_CLOSED` and the closed day in `details.date`. An expense counts as cash if it was paid in cash before the change or will be after it. Other payment methods are never locked.
 
 ### Business summary
 
@@ -517,7 +522,7 @@ Every error comes back in the same shape:
 
 `fieldErrors` only appears on validation errors.
 
-`code` only appears on the authentication errors below. It is a stable value for clients to tell these cases apart, while the wording of `message` may change. Clients should treat a missing or unknown `code` like any other error with that status.
+`code` only appears on the errors in the table below: the authentication errors and the cash closing and expense conflicts. It is a stable value for clients to tell these cases apart, while the wording of `message` may change. Clients should treat a missing or unknown `code` like any other error with that status.
 
 ```json
 {
@@ -537,6 +542,27 @@ Every error comes back in the same shape:
 | `SESSION_EXPIRED` | 401 | The token has expired, was revoked by a password change, belongs to a deleted user or is otherwise invalid |
 | `AUTHENTICATION_REQUIRED` | 401 | An endpoint that needs a token was called without one |
 | `TOO_MANY_ATTEMPTS` | 429 | Too many failed logins for the username and IP, or for the IP; wait the seconds given in `Retry-After` |
+| `CASH_CLOSING_EXISTS` | 409 | The establishment already has a cash closing for that business day; `details.date` is the day |
+| `CASH_CLOSING_CLOSED` | 409 | Editing or deleting a closed cash closing, or closing one that is already closed |
+| `CASH_CLOSING_NOT_CLOSED` | 409 | Reopening a cash closing that is not closed |
+| `CASH_CLOSING_WAS_CLOSED` | 409 | Deleting a draft that was closed before and reopened |
+| `DIFFERENCE_REASON_REQUIRED` | 409 | Closing a day whose cash difference is over the threshold without a `differenceReason` |
+| `CASH_DAY_CLOSED` | 409 | Adding, changing, moving or deleting a cash expense of a day whose closing is closed; `details.date` is that day |
+| `FUTURE_DATE` | 409 | A cash closing's `businessDate` or an expense's `date` is after today in the establishment's time zone |
+
+`details` only comes with `CASH_CLOSING_EXISTS` and `CASH_DAY_CLOSED`, and is left out otherwise. It holds what the error is about as strings, so clients don't have to parse the message; for now that is `date`, the business day as `YYYY-MM-DD`:
+
+```json
+{
+  "timestamp": "2026-11-20T21:15:30Z",
+  "status": 409,
+  "error": "Conflict",
+  "message": "The cash closing of 2026-11-20 is closed; reopen it to add, change or delete cash expenses of that day",
+  "path": "/api/expenses",
+  "code": "CASH_DAY_CLOSED",
+  "details": { "date": "2026-11-20" }
+}
+```
 
 | Status | When |
 |---|---|
