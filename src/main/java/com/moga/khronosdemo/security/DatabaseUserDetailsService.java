@@ -40,6 +40,7 @@ public class DatabaseUserDetailsService implements UserDetailsService {
         boolean enabled = workerRepository.findById(user.getId())
                 .map(Worker::getActive)
                 .orElse(true);
-        return new SecurityUser(user.getId(), user.getUsername(), user.getPassword(), user.getRole(), enabled);
+        return new SecurityUser(user.getId(), user.getUsername(), user.getPassword(), user.getRole(), enabled,
+                user.getCredentialsChangedAt());
     }
 }

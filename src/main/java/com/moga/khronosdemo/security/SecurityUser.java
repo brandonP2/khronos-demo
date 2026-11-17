@@ -5,6 +5,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 
@@ -15,13 +16,16 @@ public class SecurityUser implements UserDetails {
     private final String password;
     private final Role role;
     private final boolean enabled;
+    private final Instant credentialsChangedAt;
 
-    public SecurityUser(Long id, String username, String password, Role role, boolean enabled) {
+    public SecurityUser(Long id, String username, String password, Role role, boolean enabled,
+                        Instant credentialsChangedAt) {
         this.id = id;
         this.username = username;
         this.password = password;
         this.role = role;
         this.enabled = enabled;
+        this.credentialsChangedAt = credentialsChangedAt;
     }
 
     public Long getId() {
@@ -30,6 +34,10 @@ public class SecurityUser implements UserDetails {
 
     public Role getRole() {
         return role;
+    }
+
+    public Instant getCredentialsChangedAt() {
+        return credentialsChangedAt;
     }
 
     @Override

@@ -63,6 +63,7 @@ The user is reloaded from the database on every request, so some changes take ef
 | Change | Effect on existing tokens |
 |---|---|
 | A worker is deactivated | Rejected immediately with **401** "This account is disabled" |
+| The user changes their password | Every token issued before the change is rejected, which signs out other devices |
 | The user is deleted | Rejected immediately |
 | The role or username changes | The token keeps working with the new values, because it identifies the user by id |
 
@@ -131,7 +132,7 @@ All endpoints are under `/api` and need a bearer token, except `POST /api/auth/l
 | Resource | Base path | Notes |
 |---|---|---|
 | Auth | `/api/auth` | `POST /login` returns a token valid for one hour. |
-| Users | `/api/users` | `GET /me` returns the logged-in user. `POST /create?role=...` is for admins only. `POST /create/worker` creates a user with the `WORKER` role. `PUT /{id}/password` changes the password. |
+| Users | `/api/users` | `GET /me` returns the logged-in user. `POST /create?role=...` is for admins only. `POST /create/worker` creates a user with the `WORKER` role. `PUT /{id}/password` changes the password and revokes the user's older tokens. |
 | Establishments | `/api/establishments` | You can also list them by owner: `/owner/{ownerId}`. |
 | Zones | `/api/zones` | You can also list them by establishment: `/establishment/{id}`. |
 | Workers | `/api/workers` | Identified by their user ID. You can list them by establishment. |
@@ -209,7 +210,7 @@ JWT_SECRET=<output of: openssl rand -base64 48>
 
 Then run `mvn spring-boot:run`, or start `KhronosDemoApplication` from your IDE. Swagger UI is at http://localhost:8080/swagger-ui.html: call `POST /api/auth/login`, then paste the `accessToken` into **Authorize**.
 
-Hibernate creates and updates the tables on startup (`ddl-auto=update`).
+Hibernate creates and updates the tables on startup (`ddl-auto=update`). That includes the `credentials_changed_at` column on `users`, which is used to revoke tokens.
 
 ## Project structure
 

@@ -3,6 +3,8 @@ package com.moga.khronosdemo.entities;
 import com.moga.khronosdemo.entities.enums.Role;
 import jakarta.persistence.*;
 
+import java.time.Instant;
+
 @Entity
 @Table(name="users")
 public class User {
@@ -29,6 +31,9 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role = Role.WORKER;
+
+    // Tokens issued before this moment are rejected, so changing the password signs out other sessions
+    private Instant credentialsChangedAt;
 
     public User() {
     }
@@ -105,6 +110,14 @@ public class User {
 
     public void setRole(Role role) {
         this.role = role;
+    }
+
+    public Instant getCredentialsChangedAt() {
+        return credentialsChangedAt;
+    }
+
+    public void setCredentialsChangedAt(Instant credentialsChangedAt) {
+        this.credentialsChangedAt = credentialsChangedAt;
     }
 
 }

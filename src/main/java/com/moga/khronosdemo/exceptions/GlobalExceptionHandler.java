@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.CredentialsExpiredException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.AuthenticationException;
@@ -95,7 +96,7 @@ public class GlobalExceptionHandler {
         String message;
         if (ex instanceof DisabledException) {
             message = "This account is disabled";
-        } else if (ex instanceof OAuth2AuthenticationException) {
+        } else if (ex instanceof OAuth2AuthenticationException || ex instanceof CredentialsExpiredException) {
             message = "Your session has expired or is no longer valid. Sign in again";
         } else if (ex instanceof InsufficientAuthenticationException) {
             message = "Authentication is required to access this resource";
