@@ -85,9 +85,11 @@ public class WorkerServiceImpl implements WorkerService {
         return workerRepository.findByEstablishment_Id(establishmentId).stream().map(workerMapper::toResponse).toList();
     }
 
+    // The worker's lock makes a clock-in sent meanwhile wait: either it commits first and the check for
+    // time entries below sees it, or it runs after the move and is recorded at the new establishment
     @Override
     public WorkerResponseDTO update(Long userId, WorkerRequestDTO request) {
-        Worker worker = getWorker(userId);
+        Worker worker = lockWorker(userId);
         if (!userId.equals(request.userId())) {
             throw new BusinessRuleException("The user of a worker cannot be changed");
         }
@@ -107,9 +109,7 @@ public class WorkerServiceImpl implements WorkerService {
     // The worker's lock makes a clock-in sent meanwhile wait, and then find no worker.
     @Override
     public void delete(Long userId) {
-        Worker worker = workerRepository.lockAllById(List.of(userId)).stream()
-                .findFirst()
-                .orElseThrow(() -> new ResourceNotFoundException("Worker", userId));
+        Worker worker = lockWorker(userId);
         if (timeEntryRepository.existsByWorker_UserId(userId)) {
             throw new BusinessRuleException("Cannot delete a worker who has time entries; deactivate them instead"
                     + " (PUT /api/workers/" + userId + "/active) to keep their time entries");
@@ -134,6 +134,13 @@ public class WorkerServiceImpl implements WorkerService {
 
     private Worker getWorker(Long userId) {
         return workerRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Worker", userId));
+    }
+
+    // Holds the worker's row lock until commit, the lock their time entries and schedule changes take
+    private Worker lockWorker(Long userId) {
+        return workerRepository.lockAllById(List.of(userId)).stream()
+                .findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("Worker", userId));
     }
 
