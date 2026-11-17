@@ -47,7 +47,7 @@ Deleting a parent also deletes everything under it. For example, deleting an est
 | Role | What they can do |
 |---|---|
 | `PLATFORM_ADMIN` | Everything. This is the only role that creates users of any role and creates or deletes establishments. |
-| `OWNER` | Manages their own establishments: edits them and manages their zones, workers, shifts, events and assignments. They can create users with the `WORKER` role, link to their establishments only the accounts they created, and reset their workers' passwords. They enter, correct and void their workers' time entries, set their hourly rates and read the reports and CSV exports of their establishments. |
+| `OWNER` | Manages their own establishments: edits them and manages their zones, workers, shifts, events and assignments. They can create users with the `WORKER` role, link to their establishments only the accounts they created, and reset their workers' passwords. They enter, clock out, correct and void their workers' time entries, set their hourly rates and read the reports and CSV exports of their establishments. |
 | `WORKER` | Can read their own profile, shifts and event assignments, and see the zones and events of the establishment they work at and who is assigned to each event. Listing the establishment's assignments gives them only their own. They see who the owner is but not the owner's email or phone. They can change their own password. They clock themselves in and out, and read their own time entries, their history, their daily report and its CSV. They never see hourly rates or costs, not even their own. |
 
 Each endpoint checks access with `@PreAuthorize` rules backed by `AccessGuard`. A request for data that belongs to another owner returns **403**.
@@ -159,7 +159,7 @@ A worker clocks in with `POST /api/time-entries/clock-in` and out with `POST /ap
 
 When a worker clocks in (or an owner enters or corrects an entry), the entry is matched to the worker's shift that is running at the clock-in or starts within the next 3 hours. It then gets that shift's `shiftId` and counts for its date: a clock-in at 00:30 on Saturday during a Friday 18:00-02:00 shift belongs to Friday. With no such shift, `shiftId` is null and the business day is the local date of the clock-in.
 
-Each entry has a `status`: `OPEN` (no clock-out yet), `CLOSED` or `VOIDED`. `workedMinutes` is the whole minutes between clock-in and clock-out minus `breakMinutes`, and null while open. `isStale` is true when an entry has been open for more than 16 hours, which usually means a forgotten clock-out. A worker can't close an entry that has been open for more than 24 hours; an owner has to correct it.
+Each entry has a `status`: `OPEN` (no clock-out yet), `CLOSED` or `VOIDED`. `workedMinutes` is the whole minutes between clock-in and clock-out minus `breakMinutes`, and null while open. `isStale` is true when an entry has been open for more than 16 hours, which usually means a forgotten clock-out. The owner can clock the worker out (see below). Neither of them can clock out an entry that has been open for more than 24 hours, because no entry lasts longer than that: the owner corrects it with the real clock-out time instead.
 
 | Request | When it answers 409 |
 |---|---|
@@ -171,10 +171,13 @@ Each entry has a `status`: `OPEN` (no clock-out yet), `CLOSED` or `VOIDED`. `wor
 The establishment's owner or an admin can:
 
 - enter an entry for a worker with `POST /api/time-entries`: without `clockOut` it clocks them in now, with it it records a past shift (`source` is `MANAGER`);
+- clock a worker out with `POST /api/time-entries/{id}/clock-out`, for example when they left without doing it. As when the worker does it, the clock-out is the server's time; `breakMinutes` (0 to 600) is optional and, when left out, the entry keeps its break. The entry keeps its `source` and `isEdited` stays false, because no time was changed;
 - correct an entry with `PUT /api/time-entries/{id}`, which sets `isEdited` and matches it to a shift again;
 - void it with `PUT /api/time-entries/{id}/void`. A voided entry stays, but listings leave it out unless `includeVoided=true`, and reports never count it.
 
-Each of these needs a `reason` of 3 to 255 characters. Entries are never deleted through the API. Every creation, clock-out, correction and void adds a row to the entry's history (`GET /api/time-entries/{id}/history`, oldest first) with the action, who did it, when, the reason, and the clock-in, clock-out and break the entry had right after. History rows can't be changed: a database trigger rejects updates.
+Each of these needs a `reason` of 3 to 255 characters. Entries are never deleted through the API. Every creation, clock-out, correction and void adds a row to the entry's history (`GET /api/time-entries/{id}/history`, oldest first) with the action, who did it, when, the reason, and the clock-in, clock-out and break the entry had right after. A clock-out by the owner is a `CLOCKED_OUT` row with the owner as the author and their reason. History rows can't be changed: a database trigger rejects updates.
+
+A clock-out by the owner answers **409** with `The time entry is already clocked out`, `A voided time entry cannot be clocked out`, `The break cannot be longer than the time between clock-in and clock-out` or, for an entry open for more than 24 hours, `This time entry has been open for more than 24 hours; correct it with PUT /api/time-entries/{id} and the real clock-out time` (with the entry's id).
 
 Manual entries and corrections answer **409** with one of: `Clock-in cannot be in the future`, `Clock-out cannot be in the future` (both allow one minute of clock difference), `Clock-out must be after clock-in`, `A time entry cannot last more than 24 hours`, `The break cannot be longer than the time between clock-in and clock-out`, `The time entry overlaps another time entry of this worker` (voided entries don't count), `A voided time entry cannot be corrected` and `The time entry is already voided`. An owner can enter past days for an inactive worker.
 
@@ -248,7 +251,7 @@ All endpoints are under `/api` and need a bearer token, except `POST /api/auth/l
 | Worker shifts | `/api/worker-shifts` | `POST` takes a **list**. You can list shifts by owner, worker or zone. |
 | Events | `/api/events` | `POST` takes a **list**. You can list events by zone or establishment. |
 | Worker events | `/api/worker-events` | `POST` takes a **list** of worker/event pairs. You can list assignments by worker, event or establishment. |
-| Time entries | `/api/time-entries` | Workers clock in and out; owners enter, correct and void entries. See below. |
+| Time entries | `/api/time-entries` | Workers clock in and out; owners enter, clock out, correct and void entries. See below. |
 | Rates | `/api/workers/{workerId}/rates` | A worker's hourly rates. Owners and admins only. |
 | Reports | `/api/reports` | Hours, lateness and costs, as JSON or CSV. |
 | Health | `/actuator/health` | Public. Answers `{"status":"UP"}` without details, or 503 if the database is down. |
@@ -277,6 +280,7 @@ All endpoints are under `/api` and need a bearer token, except `POST /api/auth/l
 | `POST /api/time-entries/clock-out` | `{ "breakMinutes": 30, "note": "..." }`, both optional; `breakMinutes` 0 to 600 | **200** the entry | A worker, for themselves |
 | `GET /api/time-entries/me/open` | | **200** the open entry, or **204** if there is none | A worker |
 | `POST /api/time-entries` | `{ "workerId": 5, "clockIn": "2026-11-20T17:00:00Z", "clockOut": null, "breakMinutes": 0, "reason": "..." }` | **201** the entry, with `source` `MANAGER` | The owner or an admin |
+| `POST /api/time-entries/{id}/clock-out` | `{ "breakMinutes": 30, "reason": "..." }`; `breakMinutes` optional, 0 to 600; `reason` 3 to 255 characters | **200** the entry, `status` `CLOSED` | The owner or an admin |
 | `PUT /api/time-entries/{id}` | `{ "clockIn": "...", "clockOut": "..." or null, "breakMinutes": 0, "reason": "..." }` | **200** the entry, `isEdited` true | The owner or an admin |
 | `PUT /api/time-entries/{id}/void` | `{ "reason": "..." }` | **200** the entry, `status` `VOIDED` | The owner or an admin |
 | `GET /api/time-entries/{id}/history` | | **200** the changes, oldest first | The owner, an admin or the entry's worker |

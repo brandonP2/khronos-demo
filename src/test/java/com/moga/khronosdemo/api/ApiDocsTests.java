@@ -37,6 +37,7 @@ class ApiDocsTests extends IntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/time-entries'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/time-entries/{id}'].put").exists())
                 .andExpect(jsonPath("$.paths['/api/time-entries/{id}/void'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/time-entries/{id}/clock-out'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/time-entries/{id}/history'].get").exists())
                 .andExpect(jsonPath("$.paths['/api/time-entries/worker/{workerId}'].get.parameters[*].name",
                         hasItem("includeVoided")))

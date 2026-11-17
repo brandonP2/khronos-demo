@@ -65,6 +65,9 @@ class TimeTrackingIsolationTests extends IntegrationTest {
         expectForbidden(as(ownerA), putJson("/api/time-entries/{id}/void", """
                 { "reason": "Hijack" }
                 """, entryB.getId()));
+        expectForbidden(as(ownerA), postJson("/api/time-entries/{id}/clock-out", """
+                { "reason": "Hijack" }
+                """, entryB.getId()));
         expectForbidden(as(ownerA), getJson("/api/time-entries/{id}/history", entryB.getId()));
         expectForbidden(as(ownerA), getJson("/api/time-entries/worker/{id}", workerB.getUserId()));
         expectForbidden(as(ownerA), getJson("/api/time-entries/establishment/{id}", venueB.getId()));
@@ -105,6 +108,9 @@ class TimeTrackingIsolationTests extends IntegrationTest {
         expectForbidden(worker, getJson("/api/time-entries/worker/{id}", workerB.getUserId()));
         expectForbidden(worker, getJson("/api/time-entries/establishment/{id}", venueB.getId()));
         expectForbidden(worker, putJson("/api/time-entries/{id}/void", """
+                { "reason": "Hijack" }
+                """, entryB.getId()));
+        expectForbidden(worker, postJson("/api/time-entries/{id}/clock-out", """
                 { "reason": "Hijack" }
                 """, entryB.getId()));
         expectForbidden(worker, getJson("/api/workers/{id}/rates", workerB.getUserId()));

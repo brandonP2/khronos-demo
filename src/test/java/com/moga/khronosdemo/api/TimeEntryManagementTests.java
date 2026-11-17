@@ -183,6 +183,129 @@ class TimeEntryManagementTests extends IntegrationTest {
     }
 
     @Test
+    void anOwnerClocksOutAWorkerWhoLeftWithoutDoingIt() throws Exception {
+        clock.setNow(Instant.parse("2030-05-09T16:00:00Z"));
+        Long id = clockedIn(worker);
+
+        clock.setNow(Instant.parse("2030-05-10T01:30:00Z"));
+        mockMvc.perform(postJson("/api/time-entries/{id}/clock-out", """
+                        { "breakMinutes": 30, "reason": "Left without clocking out" }
+                        """, id).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLOSED"))
+                .andExpect(jsonPath("$.clockOut").value("2030-05-10T01:30:00Z"))
+                .andExpect(jsonPath("$.breakMinutes").value(30))
+                .andExpect(jsonPath("$.workedMinutes").value(540))
+                .andExpect(jsonPath("$.source").value("WORKER"))
+                .andExpect(jsonPath("$.isEdited").value(false));
+
+        mockMvc.perform(getJson("/api/time-entries/{id}/history", id).with(as(worker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].action", contains("CREATED", "CLOCKED_OUT")))
+                .andExpect(jsonPath("$[1].changedByUserId").value(owner.getId()))
+                .andExpect(jsonPath("$[1].changedByName").value("First owner Last owner"))
+                .andExpect(jsonPath("$[1].reason").value("Left without clocking out"))
+                .andExpect(jsonPath("$[1].changedAt").value("2030-05-10T01:30:00Z"))
+                .andExpect(jsonPath("$[1].clockOut").value("2030-05-10T01:30:00Z"))
+                .andExpect(jsonPath("$[1].breakMinutes").value(30));
+
+        // The worker is out and can clock in again
+        mockMvc.perform(getJson("/api/time-entries/me/open").with(as(worker))).andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/time-entries/clock-in").with(as(worker))).andExpect(status().isCreated());
+    }
+
+    @Test
+    void anOwnerClosesAForgottenEntryUpTo24HoursAndPastThatCorrectsIt() throws Exception {
+        clock.setNow(Instant.parse("2030-05-08T08:00:00Z"));
+        Long forgotten = clockedIn(worker);
+        clock.setNow(Instant.parse("2030-05-09T07:00:00Z"));
+        mockMvc.perform(getJson("/api/time-entries/me/open").with(as(worker)))
+                .andExpect(jsonPath("$.isStale").value(true));
+
+        // Without breakMinutes the entry keeps its break (none)
+        mockMvc.perform(postJson("/api/time-entries/{id}/clock-out", """
+                        { "reason": "Forgot to clock out yesterday" }
+                        """, forgotten).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.breakMinutes").value(0))
+                .andExpect(jsonPath("$.workedMinutes").value(1380))
+                .andExpect(jsonPath("$.isStale").value(false));
+
+        clock.setNow(Instant.parse("2030-05-09T08:00:00Z"));
+        Long overdue = clockedIn(worker);
+        clock.setNow(Instant.parse("2030-05-10T08:00:01Z"));
+        mockMvc.perform(postJson("/api/time-entries/{id}/clock-out", """
+                        { "reason": "Forgot to clock out yesterday" }
+                        """, overdue).with(as(owner)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("This time entry has been open for more than 24 hours;"
+                        + " correct it with PUT /api/time-entries/" + overdue + " and the real clock-out time"));
+        mockMvc.perform(putJson("/api/time-entries/{id}", """
+                        { "clockIn": "2030-05-09T08:00:00Z", "clockOut": "2030-05-09T16:00:00Z", "breakMinutes": 0,
+                          "reason": "Left at four, confirmed by the manager" }
+                        """, overdue).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLOSED"));
+    }
+
+    @Test
+    void onlyAnOpenEntryCanBeClockedOutByTheOwner() throws Exception {
+        Long closed = createdEntry();
+        expectClockOutConflict(closed, "{ \"reason\": \"Again\" }", "The time entry is already clocked out");
+
+        mockMvc.perform(putJson("/api/time-entries/{id}/void", """
+                        { "reason": "Entered twice" }
+                        """, closed).with(as(owner)))
+                .andExpect(status().isOk());
+        expectClockOutConflict(closed, "{ \"reason\": \"Again\" }", "A voided time entry cannot be clocked out");
+
+        clock.setNow(Instant.parse("2030-05-10T10:00:00Z"));
+        Long open = clockedIn(worker);
+        clock.setNow(Instant.parse("2030-05-10T10:20:00Z"));
+        expectClockOutConflict(open, "{ \"breakMinutes\": 21, \"reason\": \"Short shift\" }",
+                "The break cannot be longer than the time between clock-in and clock-out");
+        mockMvc.perform(putJson("/api/time-entries/{id}/void", """
+                        { "reason": "Clocked in by mistake" }
+                        """, open).with(as(owner)))
+                .andExpect(status().isOk());
+        expectClockOutConflict(open, "{ \"reason\": \"Again\" }", "A voided time entry cannot be clocked out");
+
+        // The refused clock-outs left nothing in the history: two creations and two voids
+        assertEquals(4, timeEntryChangeRepository.count());
+    }
+
+    @Test
+    void clockingOutForAWorkerNeedsAReasonAndAnOwnerOrAdmin() throws Exception {
+        User admin = createAdmin("admin");
+        clock.setNow(Instant.parse("2030-05-10T08:00:00Z"));
+        Long id = clockedIn(worker);
+        clock.setNow(Instant.parse("2030-05-10T12:00:00Z"));
+
+        mockMvc.perform(postJson("/api/time-entries/{id}/clock-out", "{}", id).with(as(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.reason").value("must not be blank"));
+        mockMvc.perform(postJson("/api/time-entries/{id}/clock-out", """
+                        { "breakMinutes": 601, "reason": "Long break" }
+                        """, id).with(as(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.breakMinutes").exists());
+        mockMvc.perform(postJson("/api/time-entries/{id}/clock-out", """
+                        { "reason": "Leaving" }
+                        """, id).with(as(worker)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(postJson("/api/time-entries/{id}/clock-out", """
+                        { "reason": "Leaving" }
+                        """, 999_999).with(as(admin)))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(postJson("/api/time-entries/{id}/clock-out", """
+                        { "reason": "Support request" }
+                        """, id).with(as(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workedMinutes").value(240));
+    }
+
+    @Test
     void voidedEntriesAreListedOnlyWhenAskedFor() throws Exception {
         Long voided = createdEntry();
         mockMvc.perform(postJson("/api/time-entries", """
@@ -286,6 +409,18 @@ class TimeEntryManagementTests extends IntegrationTest {
                         """.formatted(worker.getUserId())).with(as(owner)))
                 .andExpect(status().isCreated())
                 .andReturn(), "$.id");
+    }
+
+    private Long clockedIn(Worker who) throws Exception {
+        return longAt(mockMvc.perform(post("/api/time-entries/clock-in").with(as(who)))
+                .andExpect(status().isCreated())
+                .andReturn(), "$.id");
+    }
+
+    private void expectClockOutConflict(Long id, String body, String message) throws Exception {
+        mockMvc.perform(postJson("/api/time-entries/{id}/clock-out", body, id).with(as(owner)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(message));
     }
 
     private void expectConflict(String clockIn, String clockOut, int breakMinutes, String message) throws Exception {

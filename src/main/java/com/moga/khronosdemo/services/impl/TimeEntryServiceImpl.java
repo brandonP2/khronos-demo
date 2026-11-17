@@ -2,6 +2,7 @@ package com.moga.khronosdemo.services.impl;
 
 import com.moga.khronosdemo.dtos.request.ClockInRequestDTO;
 import com.moga.khronosdemo.dtos.request.ClockOutRequestDTO;
+import com.moga.khronosdemo.dtos.request.TimeEntryClockOutRequestDTO;
 import com.moga.khronosdemo.dtos.request.TimeEntryCorrectionRequestDTO;
 import com.moga.khronosdemo.dtos.request.TimeEntryRequestDTO;
 import com.moga.khronosdemo.dtos.response.TimeEntryChangeResponseDTO;
@@ -98,18 +99,8 @@ public class TimeEntryServiceImpl implements TimeEntryService {
         lockOwnWorker(workerId);
         TimeEntry entry = timeEntryRepository.findOpenByWorker(workerId)
                 .orElseThrow(() -> new BusinessRuleException("You have no open time entry"));
-        Instant now = now();
-        if (Duration.between(entry.getClockIn(), now).compareTo(MAX_DURATION) > 0) {
-            throw new BusinessRuleException("This time entry has been open for more than 24 hours;"
-                    + " ask a manager to correct it");
-        }
-        int breakMinutes = request != null && request.breakMinutes() != null
-                ? request.breakMinutes()
-                : entry.getBreakMinutes();
-        checkTimes(entry.getClockIn(), now, breakMinutes);
-
-        entry.setClockOut(now);
-        entry.setBreakMinutes(breakMinutes);
+        closeNow(entry, request != null ? request.breakMinutes() : null,
+                "This time entry has been open for more than 24 hours; ask a manager to correct it");
         String note = clean(request != null ? request.note() : null);
         if (note != null) {
             entry.setNote(note);
@@ -154,6 +145,23 @@ public class TimeEntryServiceImpl implements TimeEntryService {
         // A new clock-in may belong to another shift, or to none
         shiftLinker.link(entry);
         record(entry, TimeEntryAction.CORRECTED, getUser(actorId), request.reason());
+        return timeEntryMapper.toResponse(entry);
+    }
+
+    // An owner or admin closes a worker's open entry, for example when the worker left without clocking
+    // out. As for the worker, the clock-out is the server's time; the history keeps who did it and why.
+    @Override
+    public TimeEntryResponseDTO clockOutEntry(Long id, TimeEntryClockOutRequestDTO request, Long actorId) {
+        TimeEntry entry = lockAndGet(id);
+        if (entry.isVoided()) {
+            throw new BusinessRuleException("A voided time entry cannot be clocked out");
+        }
+        if (!entry.isOpen()) {
+            throw new BusinessRuleException("The time entry is already clocked out");
+        }
+        closeNow(entry, request.breakMinutes(), "This time entry has been open for more than 24 hours; correct it"
+                + " with PUT /api/time-entries/" + id + " and the real clock-out time");
+        record(entry, TimeEntryAction.CLOCKED_OUT, getUser(actorId), request.reason());
         return timeEntryMapper.toResponse(entry);
     }
 
@@ -206,6 +214,20 @@ public class TimeEntryServiceImpl implements TimeEntryService {
         return timeEntryRepository.findOpenByEstablishment(establishmentId).stream()
                 .map(timeEntryMapper::toResponse)
                 .toList();
+    }
+
+    // Clocks an open entry out at the server's time. A null break keeps the entry's current one. No entry
+    // lasts more than 24 hours, so past that it has to be corrected with the real clock-out time instead.
+    private void closeNow(TimeEntry entry, Integer breakMinutes, String tooLongMessage) {
+        Instant now = now();
+        if (Duration.between(entry.getClockIn(), now).compareTo(MAX_DURATION) > 0) {
+            throw new BusinessRuleException(tooLongMessage);
+        }
+        int breakToKeep = breakMinutes != null ? breakMinutes : entry.getBreakMinutes();
+        checkTimes(entry.getClockIn(), now, breakToKeep);
+
+        entry.setClockOut(now);
+        entry.setBreakMinutes(breakToKeep);
     }
 
     // Rules shared by clock-out, manual entries and corrections. clockOut is null for an open entry.

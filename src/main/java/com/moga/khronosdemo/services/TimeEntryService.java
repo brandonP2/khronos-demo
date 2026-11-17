@@ -2,6 +2,7 @@ package com.moga.khronosdemo.services;
 
 import com.moga.khronosdemo.dtos.request.ClockInRequestDTO;
 import com.moga.khronosdemo.dtos.request.ClockOutRequestDTO;
+import com.moga.khronosdemo.dtos.request.TimeEntryClockOutRequestDTO;
 import com.moga.khronosdemo.dtos.request.TimeEntryCorrectionRequestDTO;
 import com.moga.khronosdemo.dtos.request.TimeEntryRequestDTO;
 import com.moga.khronosdemo.dtos.response.TimeEntryChangeResponseDTO;
@@ -22,6 +23,8 @@ public interface TimeEntryService {
     TimeEntryResponseDTO create(TimeEntryRequestDTO request, Long actorId);
 
     TimeEntryResponseDTO correct(Long id, TimeEntryCorrectionRequestDTO request, Long actorId);
+
+    TimeEntryResponseDTO clockOutEntry(Long id, TimeEntryClockOutRequestDTO request, Long actorId);
 
     TimeEntryResponseDTO voidEntry(Long id, String reason, Long actorId);
 

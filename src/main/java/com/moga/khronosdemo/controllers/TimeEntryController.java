@@ -2,6 +2,7 @@ package com.moga.khronosdemo.controllers;
 
 import com.moga.khronosdemo.dtos.request.ClockInRequestDTO;
 import com.moga.khronosdemo.dtos.request.ClockOutRequestDTO;
+import com.moga.khronosdemo.dtos.request.TimeEntryClockOutRequestDTO;
 import com.moga.khronosdemo.dtos.request.TimeEntryCorrectionRequestDTO;
 import com.moga.khronosdemo.dtos.request.TimeEntryRequestDTO;
 import com.moga.khronosdemo.dtos.request.TimeEntryVoidRequestDTO;
@@ -22,7 +23,7 @@ import java.util.List;
 
 /**
  * Time tracking. Workers clock themselves in and out with the server's time; the establishment's owner
- * or an admin can enter, correct and void entries, always with a reason that is kept in the history.
+ * or an admin can enter, clock out, correct and void entries, always with a reason that is kept in the history.
  */
 @RestController
 @RequestMapping("/api/time-entries")
@@ -71,6 +72,15 @@ public class TimeEntryController {
     public TimeEntryResponseDTO correct(@PathVariable Long id, @Valid @RequestBody TimeEntryCorrectionRequestDTO request,
                                         @AuthenticationPrincipal SecurityUser principal) {
         return timeEntryService.correct(id, request, principal.getId());
+    }
+
+    // Clocks out a worker who left without doing it, with the server's time
+    @PostMapping("/{id}/clock-out")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsTimeEntry(#id)")
+    public TimeEntryResponseDTO clockOutEntry(@PathVariable Long id,
+                                              @Valid @RequestBody TimeEntryClockOutRequestDTO request,
+                                              @AuthenticationPrincipal SecurityUser principal) {
+        return timeEntryService.clockOutEntry(id, request, principal.getId());
     }
 
     @PutMapping("/{id}/void")
