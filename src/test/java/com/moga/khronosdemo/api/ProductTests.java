@@ -2,6 +2,7 @@ package com.moga.khronosdemo.api;
 
 import com.moga.khronosdemo.entities.Establishment;
 import com.moga.khronosdemo.entities.User;
+import com.moga.khronosdemo.entities.enums.ProductUnit;
 import com.moga.khronosdemo.support.IntegrationTest;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
@@ -13,6 +14,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.nullValue;
@@ -21,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -182,7 +185,8 @@ class ProductTests extends IntegrationTest {
                         { "name": "Ron", "category": "SPIRITS", "unit": "BOX" }
                         """, rum).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("The unit of a product with stock movements cannot be changed"))
+                .andExpect(jsonPath("$.message").value("The unit of a product with stock movements or purchase order"
+                        + " lines cannot be changed"))
                 .andExpect(jsonPath("$.code").value("PRODUCT_UNIT_LOCKED"));
         // Everything else can
         mockMvc.perform(putJson("/api/products/{id}", """
@@ -191,6 +195,40 @@ class ProductTests extends IntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Ron blanco"))
                 .andExpect(jsonPath("$.currentStock").value(6.0));
+    }
+
+    @Test
+    void theUnitCannotChangeOnceTheProductIsOnAPurchaseOrderWhateverItsStatus() throws Exception {
+        Long gin = product(venue, "Ginebra", "SPIRITS", "BOTTLE", null, null);
+        // 10 bottles on a draft: once in kg, receiving it would bring in 10 kg
+        Long order = longAt(mockMvc.perform(postJson("/api/purchase-orders", """
+                        { "establishmentId": %d, "supplierId": %d, "lines": [ { "productId": %d, "quantity": 10 } ] }
+                        """.formatted(venue.getId(), mahou, gin)).with(as(owner)))
+                .andExpect(status().isCreated())
+                .andReturn(), "$.id");
+        String inKilos = """
+                { "name": "Ginebra", "category": "SPIRITS", "unit": "KG" }
+                """;
+
+        for (String transition : List.of("order", "cancel")) {
+            mockMvc.perform(putJson("/api/products/{id}", inKilos, gin).with(as(owner)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("PRODUCT_UNIT_LOCKED"));
+            // Ordered, then cancelled: the line is still there
+            mockMvc.perform(put("/api/purchase-orders/{id}/" + transition, order).with(as(owner)))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(putJson("/api/products/{id}", inKilos, gin).with(as(owner)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("The unit of a product with stock movements or purchase order"
+                        + " lines cannot be changed"));
+        assertEquals(ProductUnit.BOTTLE, productRepository.findById(gin).orElseThrow().getUnit());
+        // Nothing else is locked
+        mockMvc.perform(putJson("/api/products/{id}", """
+                        { "name": "Ginebra rosa", "category": "SPIRITS", "unit": "BOTTLE" }
+                        """, gin).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Ginebra rosa"));
     }
 
     @Test

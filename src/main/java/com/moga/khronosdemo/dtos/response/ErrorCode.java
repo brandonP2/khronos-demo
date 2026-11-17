@@ -61,7 +61,7 @@ public enum ErrorCode {
     /** 409 when a product is inactive and so takes no new stock movements or purchase order lines. */
     PRODUCT_INACTIVE,
 
-    /** 409 when a product's unit is changed after stock movements were recorded in it. */
+    /** 409 when a product's unit is changed after stock movements were recorded or purchase order lines added in it. */
     PRODUCT_UNIT_LOCKED,
 
     /** 409 when a product with stock movements or purchase order lines is deleted; deactivate it instead. */

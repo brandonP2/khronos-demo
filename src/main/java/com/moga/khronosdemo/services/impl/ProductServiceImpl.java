@@ -28,8 +28,9 @@ import java.util.Objects;
 /**
  * An establishment's products. A product's stock is never edited here: it is the sum of its movements
  * (see StockLedger), worked out for every product of a listing in one query. Changes that depend on
- * whether a product has movements (its unit, deleting it) and deactivating it take the product's row
- * lock first, as recording a movement does, so neither can slip in between the check and the change.
+ * whether a product has movements or purchase order lines (its unit, deleting it) and deactivating it take
+ * the product's row lock first, as recording a movement and adding an order line do, so neither can slip in
+ * between the check and the change.
  */
 @Service
 @Transactional
@@ -105,9 +106,12 @@ public class ProductServiceImpl implements ProductService {
         Long establishmentId = product.getEstablishment().getId();
         checkNameFree(establishmentId, request.name(), id);
         Supplier supplier = supplierOf(establishmentId, request.supplierId());
-        if (request.unit() != product.getUnit() && stockMovementRepository.existsByProduct_Id(id)) {
-            throw new BusinessRuleException("The unit of a product with stock movements cannot be changed",
-                    ErrorCode.PRODUCT_UNIT_LOCKED);
+        // An order line, in any status, was counted in the unit it has now: receiving it would bring the
+        // ordered quantity in under the new unit
+        if (request.unit() != product.getUnit() && (stockMovementRepository.existsByProduct_Id(id)
+                || purchaseOrderRepository.existsByLines_Product_Id(id))) {
+            throw new BusinessRuleException("The unit of a product with stock movements or purchase order lines"
+                    + " cannot be changed", ErrorCode.PRODUCT_UNIT_LOCKED);
         }
 
         productMapper.updateEntity(product, request);

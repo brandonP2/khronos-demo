@@ -425,7 +425,7 @@ Quantities are in the product's unit, zero or more unless said otherwise, with u
 `{ "establishmentId": 1, "name": "Ron Barceló", "category": "SPIRITS", "unit": "BOTTLE", "minStock": 2, "unitCost": 11.50, "supplierId": 3 }`
 
 - `category`: `SPIRITS`, `BEER`, `WINE`, `SOFT_DRINKS` (soft drinks and water), `COFFEE`, `FOOD`, `SUPPLIES` (napkins, ice, cleaning), `OTHER`.
-- `unit`, how the product is counted: `BOTTLE`, `UNIT`, `KG`, `L`, `BOX`, `KEG`. It can't change once the product has movements: **409** `The unit of a product with stock movements cannot be changed` (`PRODUCT_UNIT_LOCKED`).
+- `unit`, how the product is counted: `BOTTLE`, `UNIT`, `KG`, `L`, `BOX`, `KEG`. It can't change once the product has movements or is on a purchase order line, whatever the order's status (a draft or ordered line was counted in the old unit, and would come in under the new one): **409** `The unit of a product with stock movements or purchase order lines cannot be changed` (`PRODUCT_UNIT_LOCKED`).
 - `name` 1 to 100 characters, unique within the establishment whatever its case (**409** `PRODUCT_NAME_TAKEN`). `minStock` and `unitCost` are optional, zero or more. `supplierId` must be a supplier of the same establishment (**409** `The supplier belongs to another establishment`, `OTHER_ESTABLISHMENT`).
 
 A product has no stock field. The response works out:
@@ -462,7 +462,7 @@ These rules answer **400** with `fieldErrors`: `type` (`COUNT is only recorded b
 
 The ledger is the record of what happened, so **a movement is never edited or deleted**: there is no `PUT` or `DELETE`, and a mistake is corrected with a new movement (an `ADJUSTMENT`, or a count). A database trigger rejects updates and deletes of `stock_movements`; the only change it allows is the database clearing the author's link when their account is deleted, and the movement keeps their name.
 
-Movements of the same product take turns: each one is recorded while its product's row is locked, and its `stockAfter` is the stock read under that lock plus its quantity, so two movements sent at once never start from the same stock. Changing a product's unit, deactivating it and deleting it take the same lock.
+Movements of the same product take turns: each one is recorded while its product's row is locked, and its `stockAfter` is the stock read under that lock plus its quantity, so two movements sent at once never start from the same stock. Changing a product's unit, deactivating it and deleting it take the same lock, as does adding it to a purchase order.
 
 The listing (`GET /api/stock-movements/establishment/{id}?from&to&productId&type`) is newest business day first, then the latest recorded; every filter is optional and `from`/`to` apply to `date`, over at most 366 days (see [Listing ranges](#listing-ranges)): without dates, the last 366 up to today. A movement entered for an earlier day shows the stock as it was when it was recorded.
 
@@ -783,7 +783,7 @@ Every error comes back in the same shape:
 | `SUPPLIER_HAS_ORDERS` | 409 | A supplier with purchase orders can't be deleted |
 | `PRODUCT_NAME_TAKEN` | 409 | Another product of the establishment has that name, whatever its case |
 | `PRODUCT_INACTIVE` | 409 | The product is inactive, so it takes no movements, counts or order lines |
-| `PRODUCT_UNIT_LOCKED` | 409 | The unit of a product with movements can't change |
+| `PRODUCT_UNIT_LOCKED` | 409 | The unit of a product with movements or purchase order lines, in any status, can't change |
 | `PRODUCT_HAS_HISTORY` | 409 | A product with movements or order lines can't be deleted; deactivate it |
 | `OTHER_ESTABLISHMENT` | 409 | A supplier or product named in the request is of another establishment of the same owner |
 | `PURCHASE_ORDER_WRONG_STATUS` | 409 | The purchase order's status doesn't allow that edit, delete or transition |
