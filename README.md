@@ -6,6 +6,8 @@ The API stops scheduling mistakes before they are saved. For example, it won't l
 
 Besides what was planned, Khronos records what actually happened: workers clock in and out, owners correct the record with a reason that is kept, and reports compare planned and worked hours, lateness and staff cost per person, with CSV exports.
 
+It also keeps the day-to-day money, entered by hand: the daily cash closing (takings by payment method, cash counted against cash expected), the expenses, and a summary of sales, expenses, staff cost and estimated margin per day, compared with the period before.
+
 ## Tech stack
 
 | | |
@@ -39,16 +41,19 @@ Besides what was planned, Khronos records what actually happened: workers clock 
 | **WorkerRate** | What a worker costs per hour, in euros, from a given day. |
 | **TimeEntry** | A clock-in and its clock-out, as recorded. Never deleted through the API, only corrected or voided. |
 | **TimeEntryChange** | One row of a time entry's history: who did what, when, why, and the times it left. Rows are never changed. |
+| **CashClosing** | The cash closing of one business day at an establishment: takings by payment method, float, cash taken out, cash counted, and the figures worked out from them. A draft until it is closed. |
+| **CashClosingChange** | One row of a cash closing's history: who did what, when, why, and the amounts and figures it left. Rows are never changed. |
+| **Expense** | Money an establishment spent: business day, category, description, supplier, amount and payment method. |
 
-Deleting a parent also deletes everything under it. For example, deleting an establishment removes its zones, workers, shifts and events. Time entries are the exception: nothing that has them can be deleted, and deleting a shift keeps them. See [What deleting does to time entries](#what-deleting-does-to-time-entries).
+Deleting a parent also deletes everything under it. For example, deleting an establishment removes its zones, workers, shifts and events. Time entries, cash closings and expenses are the exception: nothing that has them can be deleted, and deleting a shift keeps time entries. See [What deleting does to time entries](#what-deleting-does-to-time-entries) and [Deleting and cash records](#deleting-and-cash-records).
 
 ## Roles and permissions
 
 | Role | What they can do |
 |---|---|
 | `PLATFORM_ADMIN` | Everything. This is the only role that creates users of any role and creates or deletes establishments. |
-| `OWNER` | Manages their own establishments: edits them and manages their zones, workers, shifts, events and assignments. They can create users with the `WORKER` role, link to their establishments only the accounts they created, and reset their workers' passwords. They enter, clock out, correct and void their workers' time entries, set their hourly rates and read the reports and CSV exports of their establishments. |
-| `WORKER` | Can read their own profile, shifts and event assignments, and see the zones and events of the establishment they work at and who is assigned to each event. Listing the establishment's assignments gives them only their own. They see who the owner is but not the owner's email or phone. They can change their own password. They clock themselves in and out, and read their own time entries, their history, their daily report and its CSV. They never see hourly rates or costs, not even their own. |
+| `OWNER` | Manages their own establishments: edits them and manages their zones, workers, shifts, events and assignments. They can create users with the `WORKER` role, link to their establishments only the accounts they created, and reset their workers' passwords. They enter, clock out, correct and void their workers' time entries, set their hourly rates and read the reports and CSV exports of their establishments. They also keep their establishments' cash closings and expenses and read the business summary. |
+| `WORKER` | Can read their own profile, shifts and event assignments, and see the zones and events of the establishment they work at and who is assigned to each event. Listing the establishment's assignments gives them only their own. They see who the owner is but not the owner's email or phone. They can change their own password. They clock themselves in and out, and read their own time entries, their history, their daily report and its CSV. They never see hourly rates or costs, not even their own, nor anything about cash closings, expenses or the business summary (**403**). |
 
 Each endpoint checks access with `@PreAuthorize` rules backed by `AccessGuard`. A request for data that belongs to another owner returns **403**.
 
@@ -110,7 +115,7 @@ These rules are enforced in the service layer. Breaking one returns **409 Confli
 - Two establishments can't share an address.
 - An establishment's owner must have the `OWNER` role.
 - A zone can't be moved to another establishment.
-- An establishment with time entries can't be deleted.
+- An establishment with time entries, cash closings or expenses can't be deleted.
 
 **Workers**
 - Only users with the `WORKER` role can be registered as workers, and each user only once.
@@ -233,6 +238,144 @@ The files open directly in a spreadsheet set to Spanish: UTF-8 with a byte order
 - The database doesn't stop overlapping shifts by itself. An exclusion constraint on `(worker_id, tsrange(starts_at, ends_at))` would, but adding it would make the migration fail on a database that already holds overlapping shifts written before the per-worker lock existed. The service check under that lock covers every request that goes through the API.
 - This is a record of what workers and owners entered. It is not certified as meeting any particular legal requirement for working-time records.
 
+## Cash, expenses and the business summary
+
+The manager enters the day's money by hand; Khronos works out the rest and shows it per day and per period. This is an internal management record. It is not a point-of-sale system, an invoice, a tax record or a record that meets any fiscal or accounting requirement, and it doesn't split VAT.
+
+Amounts are euros (`EUR`) with two decimals: requests accept at most two decimals and at most 99,999,999.99, and responses always have two, for example `12.50` and `0.00`. They are stored as `numeric(12,2)` and computed as `BigDecimal`, never as floating point. Amounts entered are zero or more (an expense more than zero); differences and margins can be negative. Dates are business days, `YYYY-MM-DD`, as for shifts and time entries: a night that ends at 02:00 belongs to the day before.
+
+### Cash closing
+
+One closing per establishment and business day. The request (`POST` to create, `PUT` to edit):
+
+```json
+{
+  "establishmentId": 1, "businessDate": "2026-11-20",
+  "openingFloat": 150.00, "cashSales": 820.50, "cardSales": 1300.25, "otherSales": 0,
+  "cashWithdrawals": 200.00, "countedCash": 748.00, "tips": 35.50, "notes": "Busy night"
+}
+```
+
+`otherSales` (Bizum, vouchers...) and `cashWithdrawals` (cash taken out of the till) are 0 when left out; `tips` (informative, not sales) and `notes` (at most 500 characters) are optional. `establishmentId` and `businessDate` are only read when the closing is created: an edit ignores them. The response adds what Khronos works out:
+
+| Field | How |
+|---|---|
+| `cashExpenses` | The day's expenses paid in cash |
+| `totalSales` | `cashSales + cardSales + otherSales` |
+| `expectedCash` | `openingFloat + cashSales - cashExpenses - cashWithdrawals` |
+| `difference` | `countedCash - expectedCash`: negative when cash is missing |
+
+A closing is a `DRAFT` until it is closed. A draft can be edited and its figures are worked out again on every read, so an expense entered later shows up. `PUT /{id}/close` stores the figures as they are and the status becomes `CLOSED`: from then on they don't change. A difference larger than 5.00 EUR either way (`CASH_DIFFERENCE_THRESHOLD`) needs a `differenceReason` (at most 255 characters) to close. `PUT /{id}/reopen` with a `reason` (3 to 255 characters) makes it a draft again; the stored figures, the reason for the difference and who closed it are cleared from the closing and stay in its history.
+
+Every creation, edit, close and reopen adds a row to the closing's history (`GET /{id}/history`, oldest first) with the action (`CREATED`, `UPDATED`, `CLOSED`, `REOPENED`), who did it, when, the reason (the `differenceReason` when closing, the `reason` when reopening) and the totals right after. History rows can't be changed: a database trigger rejects updates.
+
+| Request | When it answers 409 |
+|---|---|
+| `POST` | `A cash closing already exists for 2026-11-20 at this establishment; edit that one instead`, `The business date cannot be in the future` (today is the establishment's local date) |
+| `PUT /{id}` | `A closed cash closing cannot be edited; reopen it first` |
+| `PUT /{id}/close` | `The cash closing is already closed`, `The cash difference of -7.50 EUR is larger than the 5.00 EUR allowed without a reason; send a differenceReason to close the day` |
+| `PUT /{id}/reopen` | `The cash closing is not closed` |
+| `DELETE /{id}` | `A closed cash closing cannot be deleted; reopen it to correct it instead`, `A cash closing that has been closed before cannot be deleted; correct it and close it again instead` |
+
+Only a draft that was never closed can be deleted, and its history goes with it. A day that was closed once stays on record: it can be reopened and corrected, not deleted.
+
+Requests on the same establishment's cash take turns: every change to a closing or an expense first locks the establishment's row. Two closings sent at once for the same day can't both be saved (the second one gets the 409 above), and a cash expense can't slip into a day while it is being closed. The unique constraint on establishment and business day backs this up in the database, and its violation answers the same 409.
+
+### Expenses
+
+`{ "establishmentId": 1, "date": "2026-11-20", "category": "SUPPLIES", "description": "Beer kegs", "supplier": "Mahou", "amount": 120.50, "paymentMethod": "CASH", "notes": null }`
+
+- `category`: `SUPPLIES` (food and drink stock), `RENT`, `UTILITIES` (electricity, water, gas, internet), `PAYROLL` (wages and social security), `MAINTENANCE`, `MARKETING`, `TAXES`, `OTHER`.
+- `paymentMethod`: `CASH`, `CARD`, `TRANSFER`, `OTHER`.
+- `description` 1 to 150 characters, `supplier` at most 100, `notes` at most 500, `amount` more than 0. The date can't be later than today in the establishment's time zone (**409** `The expense date cannot be in the future`). `establishmentId` is only read on creation.
+- The listing is newest first, then by id, with optional `from`, `to` and `category` filters.
+
+Cash expenses come out of the till, so while a day's closing is `CLOSED` its cash expenses can't be added, changed, moved in or out, or deleted: **409** `The cash closing of 2026-11-20 is closed; reopen it to add, change or delete cash expenses of that day`. An expense counts as cash if it was paid in cash before the change or will be after it. Other payment methods are never locked.
+
+### Business summary
+
+`GET /api/reports/establishment/{id}/summary?from&to` (both required, at most 366 days) returns:
+
+- `totals`: `sales`, `cashSales`, `cardSales`, `otherSales` and `tips` from the closings of the range, drafts included; `expenses` (all of them) and `payrollExpenses` (the `PAYROLL` ones); `laborCost` and `plannedLaborCost`; `grossMargin`; `laborCostPercent`; `cashDifference` (the closings' differences added up); and `closedDays`, `draftDays` and `missingClosingDays`.
+- `days`: one row for every day of the range, earliest first, with `sales`, `expenses`, `laborCost`, `margin`, `closingStatus` and `cashDifference` (null without a closing).
+- `expensesByCategory`: the categories with expenses, largest first.
+- `previous`: `sales`, `expenses`, `laborCost` and `grossMargin` of the period of the same length right before `from`.
+
+**How the estimated margin is worked out.** `laborCost` is the staff cost from the hours worked: the actual cost of the [hours report](#reports), minutes of the entries that count times each worker's rate in force that day, adding up the workers whose cost is known. It is null when no worker's cost is known (nobody has a rate). `plannedLaborCost` does the same with the shifts. Then:
+
+```
+grossMargin = sales - (expenses - payrollExpenses) - laborCost
+```
+
+`PAYROLL` expenses are left out because the staff cost already counts the pay, so it isn't counted twice. An unknown `laborCost` counts as 0 in the margin. Each day's `margin` is worked out the same way with that day's figures; a day's `laborCost` counts the same workers as the total and is rounded to cents per day, so the days can differ from the total by a rounding cent. `laborCostPercent` is `laborCost / sales x 100` with one decimal, null when there are no sales or `laborCost` is null. The margin is an estimate: it doesn't include taxes, depreciation or anything not entered as an expense.
+
+`closingStatus` is `CLOSED` or `DRAFT` when the day has a closing; `MISSING` when it has none, is before today in the establishment's time zone and had a shift or a time entry that counts; otherwise `NONE`. Today is never `MISSING`, since its closing isn't due yet. `missingClosingDays` counts the `MISSING` days.
+
+The summary runs the same seven queries whatever the length of the range.
+
+### Cash and summary CSV exports
+
+In the same format as the [time-tracking exports](#csv-exports) (UTF-8 with a BOM, `;`, CRLF, Spanish headers, `dd/MM/yyyy`, decimal commas, user-typed text that can't run as a formula), with `from` and `to` required:
+
+| Export | File | Columns |
+|---|---|---|
+| `GET /api/reports/establishment/{id}/cash-closings.csv` | `cierres-caja_{from}_{to}.csv` | One row per closing, earliest first: `Día de servicio;Estado;Fondo inicial (EUR);Ventas en efectivo (EUR);Ventas con tarjeta (EUR);Otras ventas (EUR);Ventas totales (EUR);Gastos en efectivo (EUR);Retiradas de efectivo (EUR);Efectivo esperado (EUR);Efectivo contado (EUR);Descuadre (EUR);Motivo del descuadre;Propinas (EUR);Notas;Cerrado el;Cerrado por`. `Estado` is `Borrador` or `Cerrado`. |
+| `GET /api/reports/establishment/{id}/expenses.csv` | `gastos_{from}_{to}.csv` | One row per expense, oldest first: `Fecha;Categoría;Descripción;Proveedor;Importe (EUR);Medio de pago;Notas;Registrado por`, with the category and payment method in Spanish. |
+| `GET /api/reports/establishment/{id}/summary.csv` | `resumen_{from}_{to}.csv` | One row per day: `Fecha;Ventas (EUR);Gastos (EUR);Coste de personal (EUR);Margen (EUR);Estado del cierre;Descuadre (EUR)`. `Estado del cierre` is `Cerrado`, `Borrador`, `Falta el cierre` or `Sin cierre`; an unknown staff cost is left empty. |
+
+### Deleting and cash records
+
+Cash closings (drafts included) and expenses are the establishment's financial record, so they are kept like time entries:
+
+| Request | Message of the 409 |
+|---|---|
+| `DELETE /api/establishments/{id}` | `Cannot delete an establishment that has cash closings or expenses; keep it to keep its financial records` |
+| `DELETE /api/users/{id}` of an owner | `Cannot delete an owner whose establishments have cash closings or expenses; keep the owner to keep those financial records` |
+
+The database refuses these deletes as well (`ON DELETE RESTRICT` on the closings' and expenses' establishment and on the history's closing). Deleting the account that entered an expense, closed a day or changed a closing keeps the record with that person's name and only clears the link.
+
+### Cash closing, expense and summary endpoints
+
+All of them are for the establishment's owner or an admin; a worker gets **403**, and so does an owner for another owner's establishment, also when it is named in a request body.
+
+| Method and path | Body | Answer |
+|---|---|---|
+| `GET /api/cash-closings/establishment/{id}?from&to` | | **200** closings, latest day first; `from` and `to` optional |
+| `GET /api/cash-closings/{id}` | | **200** the closing |
+| `POST /api/cash-closings` | the closing | **201** the closing, `DRAFT` |
+| `PUT /api/cash-closings/{id}` | the closing | **200** the closing |
+| `PUT /api/cash-closings/{id}/close` | `{ "differenceReason": "..." }`, optional | **200** the closing, `CLOSED` |
+| `PUT /api/cash-closings/{id}/reopen` | `{ "reason": "..." }` | **200** the closing, `DRAFT` |
+| `DELETE /api/cash-closings/{id}` | | **204** |
+| `GET /api/cash-closings/{id}/history` | | **200** the changes, oldest first |
+| `GET /api/expenses/establishment/{id}?from&to&category` | | **200** expenses, newest first |
+| `POST /api/expenses` | the expense | **201** the expense |
+| `PUT /api/expenses/{id}` | the expense | **200** the expense |
+| `DELETE /api/expenses/{id}` | | **204** |
+| `GET /api/reports/establishment/{id}/summary?from&to` | | **200** the summary |
+| `GET /api/reports/establishment/{id}/cash-closings.csv?from&to` | | **200** `text/csv` file |
+| `GET /api/reports/establishment/{id}/expenses.csv?from&to` | | **200** `text/csv` file |
+| `GET /api/reports/establishment/{id}/summary.csv?from&to` | | **200** `text/csv` file |
+
+A closing looks like this:
+
+```json
+{
+  "id": 7, "establishmentId": 1, "businessDate": "2026-11-20", "status": "CLOSED",
+  "openingFloat": 150.00, "cashSales": 820.50, "cardSales": 1300.25, "otherSales": 0.00,
+  "cashWithdrawals": 200.00, "countedCash": 748.00, "tips": 35.50, "notes": "Busy night",
+  "cashExpenses": 20.00, "totalSales": 2120.75, "expectedCash": 750.50, "difference": -2.50,
+  "differenceReason": null, "closedAt": "2026-11-21T01:10:00Z", "closedByName": "Lucía Pérez",
+  "createdAt": "2026-11-20T23:55:00Z", "updatedAt": "2026-11-21T01:10:00Z"
+}
+```
+
+### Cash settings
+
+| Setting | Environment variable | Default |
+|---|---|---|
+| Largest difference, in euros either way, a day can be closed with without a reason | `CASH_DIFFERENCE_THRESHOLD` | `5.00` |
+
 ## Email notifications
 
 Workers get an email through [Resend](https://resend.com) whenever their schedule changes:
@@ -266,7 +409,9 @@ All endpoints are under `/api` and need a bearer token, except `POST /api/auth/l
 | Worker events | `/api/worker-events` | `POST` takes a **list** of worker/event pairs. You can list assignments by worker, event or establishment. |
 | Time entries | `/api/time-entries` | Workers clock in and out; owners enter, clock out, correct and void entries. See below. |
 | Rates | `/api/workers/{workerId}/rates` | A worker's hourly rates. Owners and admins only. |
-| Reports | `/api/reports` | Hours, lateness and costs, as JSON or CSV. |
+| Reports | `/api/reports` | Hours, lateness and costs, and the business summary, as JSON or CSV. |
+| Cash closings | `/api/cash-closings` | One per establishment and business day, closed and reopened with a history. Owners and admins only. |
+| Expenses | `/api/expenses` | An establishment's expenses. Owners and admins only. |
 | Health | `/actuator/health` | Public. Answers `{"status":"UP"}` without details, or 503 if the database is down. |
 
 **Date filters.** Every listing of shifts (by owner, worker or zone), events (by zone or establishment) and assignments by establishment accepts optional `from` and `to` query parameters, as `YYYY-MM-DD`, both inclusive. Events and assignments are filtered by the event's date. Without them the whole list comes back. For example `GET /api/worker-shifts/owner/3?from=2026-11-01&to=2026-11-30`. `from` after `to` answers **400**.
@@ -426,7 +571,8 @@ Flyway owns the schema. The scripts are in `src/main/resources/db/migration` and
 - On a database that already has those tables but no Flyway history (for example the Supabase database), the first start marks V1 as applied without running it, keeps the data, and runs only V2 onwards (`baseline-on-migrate`). `V2` adds the pieces an older database might be missing.
 - `V4` to `V7` add the establishment's time zone (existing ones get `Europe/Madrid`), the generated interval columns of shifts, hourly rates, and time entries with their history. They only add columns, tables, indexes and a trigger, so they run on a database that already has data.
 - `V8` changes the time entries' foreign keys to their worker and establishment, and the history's to its entry, from `ON DELETE CASCADE` to `ON DELETE RESTRICT`. Only the delete action changes, so the existing rows already meet the new constraints.
-- Any schema change goes in a new script, `V9__what_it_does.sql`, `V10__...`. Never edit a script that has already run anywhere.
+- `V9` and `V10` add expenses, and cash closings with their history and its append-only trigger. They only add sequences, tables, indexes, a function and a trigger, so they run on a database that already has data.
+- Any schema change goes in a new script, `V11__what_it_does.sql`, `V12__...`. Never edit a script that has already run anywhere.
 
 ### Tests
 
@@ -444,7 +590,7 @@ JWT_SECRET=test-only-secret-0123456789-abcdefghijkl RESEND_API_KEY=test ./mvnw t
 
 ```
 src/main/java/com/moga/khronosdemo
-├── config/        OpenAPI, password encoder and clock beans, first admin bootstrap, time-tracking settings
+├── config/        OpenAPI, password encoder and clock beans, first admin bootstrap, time-tracking and cash settings
 ├── controllers/   REST endpoints and @PreAuthorize rules
 ├── dtos/          Request DTOs (with validation) and response DTOs
 ├── entities/      JPA entities and the Role enum
@@ -454,7 +600,7 @@ src/main/java/com/moga/khronosdemo
 ├── repositories/  Spring Data JPA repositories, including the overlap and coverage queries
 ├── security/      SecurityConfig, AccessGuard, the user-details service, JWT issuing and checking, login limits
 ├── services/      Service interfaces and their implementations (business rules)
-└── validation/    Custom constraints: batch size, password length in bytes, time zone ids
+└── validation/    Custom constraints: batch size, password length in bytes, time zone ids; the OnCreate group
 
 src/main/resources/db/migration   Flyway migrations
 ```
