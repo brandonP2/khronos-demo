@@ -3,6 +3,7 @@ package com.moga.khronosdemo.controllers;
 import com.moga.khronosdemo.dtos.request.EventRequestDTO;
 import com.moga.khronosdemo.dtos.response.EventResponseDTO;
 import com.moga.khronosdemo.services.EventService;
+import com.moga.khronosdemo.validation.MaxBatchSize;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -26,7 +27,7 @@ public class EventController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsZones(#request.![zoneId()])")
-    public List<EventResponseDTO> create(@RequestBody @NotEmpty List<@Valid EventRequestDTO> request) {
+    public List<EventResponseDTO> create(@RequestBody @NotEmpty @MaxBatchSize List<@Valid EventRequestDTO> request) {
         return eventService.create(request);
     }
 

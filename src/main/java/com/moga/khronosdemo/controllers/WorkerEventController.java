@@ -3,6 +3,7 @@ package com.moga.khronosdemo.controllers;
 import com.moga.khronosdemo.dtos.request.WorkerEventRequestDTO;
 import com.moga.khronosdemo.dtos.response.WorkerEventResponseDTO;
 import com.moga.khronosdemo.services.WorkerEventService;
+import com.moga.khronosdemo.validation.MaxBatchSize;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -26,7 +27,7 @@ public class WorkerEventController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or (@access.ownsWorkers(#request.![workerId()]) and @access.ownsEvents(#request.![eventId()]))")
-    public List<WorkerEventResponseDTO> create(@RequestBody @NotEmpty List<@Valid WorkerEventRequestDTO> request) {
+    public List<WorkerEventResponseDTO> create(@RequestBody @NotEmpty @MaxBatchSize List<@Valid WorkerEventRequestDTO> request) {
         return workerEventService.create(request);
     }
 

@@ -3,6 +3,7 @@ package com.moga.khronosdemo.controllers;
 import com.moga.khronosdemo.dtos.request.WorkerShiftRequestDTO;
 import com.moga.khronosdemo.dtos.response.WorkerShiftResponseDTO;
 import com.moga.khronosdemo.services.WorkerShiftService;
+import com.moga.khronosdemo.validation.MaxBatchSize;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -26,7 +27,7 @@ public class WorkerShiftController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsWorkers(#request.![workerId()])")
-    public List<WorkerShiftResponseDTO> create(@RequestBody @NotEmpty List<@Valid WorkerShiftRequestDTO> request) {
+    public List<WorkerShiftResponseDTO> create(@RequestBody @NotEmpty @MaxBatchSize List<@Valid WorkerShiftRequestDTO> request) {
         return workerShiftService.create(request);
     }
 
