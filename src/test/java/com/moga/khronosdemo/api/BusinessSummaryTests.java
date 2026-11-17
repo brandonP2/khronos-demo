@@ -135,8 +135,9 @@ class BusinessSummaryTests extends IntegrationTest {
                 .andExpect(jsonPath("$.totals.laborCost").value(70.0))
                 // Ana's shifts: 300 minutes at 10 €/h, 240 + 180 at 12 €/h
                 .andExpect(jsonPath("$.totals.plannedLaborCost").value(134.0))
-                // 1800 - (2505.50 - 1500) - 70
+                // 1800 - (2505.50 - 1500) - 70: the cost of the hours replaces the payroll expenses
                 .andExpect(jsonPath("$.totals.grossMargin").value(724.5))
+                .andExpect(jsonPath("$.totals.laborCostSource").value("HOURS"))
                 // 70 / 1800 = 3.89 %
                 .andExpect(jsonPath("$.totals.laborCostPercent").value(3.9))
                 .andExpect(jsonPath("$.totals.cashDifference").value(3.0))
@@ -165,6 +166,7 @@ class BusinessSummaryTests extends IntegrationTest {
                 .andExpect(jsonPath("$.previous.expenses").value(100.0))
                 .andExpect(jsonPath("$.previous.laborCost").value(30.0))
                 .andExpect(jsonPath("$.previous.grossMargin").value(370.0))
+                .andExpect(jsonPath("$.previous.laborCostSource").value("HOURS"))
                 .andReturn();
 
         // Money always goes out with two decimals, the percentage with one
@@ -191,7 +193,7 @@ class BusinessSummaryTests extends IntegrationTest {
     }
 
     @Test
-    void withoutRatesTheStaffCostIsUnknownAndTheMarginLeavesItOut() throws Exception {
+    void withoutRatesTheMarginTakesOffThePayrollExpensesInstead() throws Exception {
         User owner2 = createOwner("owner2");
         Establishment noRates = createEstablishment(owner2);
         Worker carla = createWorker(noRates, "carla");
@@ -199,19 +201,25 @@ class BusinessSummaryTests extends IntegrationTest {
         closing(noRates, THU, "0", "250", "0", "0", "0", "250", null);
         expense(noRates, THU, "SUPPLIES", "CARD", "40");
         expense(noRates, THU, "PAYROLL", "TRANSFER", "1000");
+        expense(noRates, LocalDate.of(2030, 5, 6), "PAYROLL", "TRANSFER", "300");
 
         mockMvc.perform(getJson("/api/reports/establishment/{id}/summary" + RANGE, noRates.getId()).with(as(owner2)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totals.laborCost").value(nullValue()))
                 .andExpect(jsonPath("$.totals.plannedLaborCost").value(nullValue()))
                 .andExpect(jsonPath("$.totals.laborCostPercent").value(nullValue()))
-                // 250 - 40, payroll left out and no staff cost
-                .andExpect(jsonPath("$.totals.grossMargin").value(210.0))
+                // 250 - 40 - 1000: with no cost from the hours, the payroll expenses are the staff cost
+                .andExpect(jsonPath("$.totals.grossMargin").value(-790.0))
+                .andExpect(jsonPath("$.totals.laborCostSource").value("PAYROLL_EXPENSES"))
                 .andExpect(jsonPath("$.days[1].laborCost").value(nullValue()))
-                .andExpect(jsonPath("$.days[1].margin").value(210.0))
+                .andExpect(jsonPath("$.days[1].margin").value(-790.0))
                 .andExpect(jsonPath("$.days[0].laborCost").value(nullValue()))
+                .andExpect(jsonPath("$.days[0].margin").value(0.0))
+                // The previous period takes off its own payroll expenses
                 .andExpect(jsonPath("$.previous.laborCost").value(nullValue()))
-                .andExpect(jsonPath("$.previous.grossMargin").value(0.0));
+                .andExpect(jsonPath("$.previous.expenses").value(300.0))
+                .andExpect(jsonPath("$.previous.grossMargin").value(-300.0))
+                .andExpect(jsonPath("$.previous.laborCostSource").value("PAYROLL_EXPENSES"));
     }
 
     @Test

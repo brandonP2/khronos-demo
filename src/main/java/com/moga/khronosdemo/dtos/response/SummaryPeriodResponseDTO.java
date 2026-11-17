@@ -1,5 +1,7 @@
 package com.moga.khronosdemo.dtos.response;
 
+import com.moga.khronosdemo.entities.enums.LaborCostSource;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
@@ -10,6 +12,8 @@ public record SummaryPeriodResponseDTO(
         BigDecimal sales,
         BigDecimal expenses,
         BigDecimal laborCost,
-        BigDecimal grossMargin
+        BigDecimal grossMargin,
+        // Which staff cost this period's grossMargin took off, decided on this period's own laborCost
+        LaborCostSource laborCostSource
 ) {
 }

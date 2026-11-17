@@ -1,5 +1,7 @@
 package com.moga.khronosdemo.dtos.response;
 
+import com.moga.khronosdemo.entities.enums.LaborCostSource;
+
 import java.math.BigDecimal;
 
 public record SummaryTotalsResponseDTO(
@@ -17,8 +19,11 @@ public record SummaryTotalsResponseDTO(
         BigDecimal laborCost,
         // Hours of the shifts times the rate; null when no worker's cost is known
         BigDecimal plannedLaborCost,
-        // sales - (expenses - payrollExpenses) - laborCost (0 when unknown); negative when the period lost money
+        // sales - (expenses - payrollExpenses) - the staff cost: laborCost, or payrollExpenses when laborCost is
+        // null (see laborCostSource); negative when the period lost money
         BigDecimal grossMargin,
+        // Which staff cost grossMargin took off: HOURS (laborCost) or PAYROLL_EXPENSES (laborCost is null)
+        LaborCostSource laborCostSource,
         // laborCost / sales x 100, one decimal; null when sales are 0 or laborCost is unknown
         BigDecimal laborCostPercent,
         // The differences of the range's closings added up

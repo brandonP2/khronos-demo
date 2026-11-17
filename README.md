@@ -296,18 +296,20 @@ Cash expenses come out of the till, so while a day's closing is `CLOSED` its cas
 
 `GET /api/reports/establishment/{id}/summary?from&to` (both required, at most 366 days) returns:
 
-- `totals`: `sales`, `cashSales`, `cardSales`, `otherSales` and `tips` from the closings of the range, drafts included; `expenses` (all of them) and `payrollExpenses` (the `PAYROLL` ones); `laborCost` and `plannedLaborCost`; `grossMargin`; `laborCostPercent`; `cashDifference` (the closings' differences added up); and `closedDays`, `draftDays` and `missingClosingDays`.
+- `totals`: `sales`, `cashSales`, `cardSales`, `otherSales` and `tips` from the closings of the range, drafts included; `expenses` (all of them) and `payrollExpenses` (the `PAYROLL` ones); `laborCost` and `plannedLaborCost`; `grossMargin` and `laborCostSource`; `laborCostPercent`; `cashDifference` (the closings' differences added up); and `closedDays`, `draftDays` and `missingClosingDays`.
 - `days`: one row for every day of the range, earliest first, with `sales`, `expenses`, `laborCost`, `margin`, `closingStatus` and `cashDifference` (null without a closing).
 - `expensesByCategory`: the categories with expenses, largest first.
-- `previous`: `sales`, `expenses`, `laborCost` and `grossMargin` of the period of the same length right before `from`.
+- `previous`: `sales`, `expenses`, `laborCost`, `grossMargin` and `laborCostSource` of the period of the same length right before `from`.
 
 **How the estimated margin is worked out.** `laborCost` is the staff cost from the hours worked: the actual cost of the [hours report](#reports), minutes of the entries that count times each worker's rate in force that day, adding up the workers whose cost is known. It is null when no worker's cost is known (nobody has a rate). `plannedLaborCost` does the same with the shifts. Then:
 
 ```
-grossMargin = sales - (expenses - payrollExpenses) - laborCost
+grossMargin = sales - (expenses - payrollExpenses) - staff cost
+staff cost  = laborCost        when laborCost is known      (laborCostSource "HOURS")
+            = payrollExpenses  when laborCost is null       (laborCostSource "PAYROLL_EXPENSES")
 ```
 
-`PAYROLL` expenses are left out because the staff cost already counts the pay, so it isn't counted twice. An unknown `laborCost` counts as 0 in the margin. Each day's `margin` is worked out the same way with that day's figures; a day's `laborCost` counts the same workers as the total and is rounded to cents per day, so the days can differ from the total by a rounding cent. `laborCostPercent` is `laborCost / sales x 100` with one decimal, null when there are no sales or `laborCost` is null. The margin is an estimate: it doesn't include taxes, depreciation or anything not entered as an expense.
+With a known `laborCost`, `PAYROLL` expenses are left out because the staff cost already counts the pay, so it isn't counted twice. When `laborCost` is null (no worker has a rate), the `PAYROLL` expenses stand in for the staff cost, so pay is still taken off and the margin is `sales - expenses`: 250 of sales, 40 of supplies and 1000 of payroll give a margin of -790, not 210. `laborCostSource` says which staff cost the margin took off. Each day's `margin` and the `previous` period's `grossMargin` are worked out the same way with their own figures: a day whose `laborCost` is null takes off that day's `PAYROLL` expenses, and `previous.laborCostSource` follows `previous.laborCost`. A day's `laborCost` counts the same workers as the total and is rounded to cents per day, so the days can differ from the total by a rounding cent. `laborCostPercent` is `laborCost / sales x 100` with one decimal, null when there are no sales or `laborCost` is null. The margin is an estimate: it doesn't include taxes, depreciation or anything not entered as an expense.
 
 `closingStatus` is `CLOSED` or `DRAFT` when the day has a closing; `MISSING` when it has none, is before today in the establishment's time zone and had a shift or a time entry that counts; otherwise `NONE`. Today is never `MISSING`, since its closing isn't due yet. `missingClosingDays` counts the `MISSING` days.
 
@@ -321,7 +323,7 @@ In the same format as the [time-tracking exports](#csv-exports) (UTF-8 with a BO
 |---|---|---|
 | `GET /api/reports/establishment/{id}/cash-closings.csv` | `cierres-caja_{from}_{to}.csv` | One row per closing, earliest first: `Día de servicio;Estado;Fondo inicial (EUR);Ventas en efectivo (EUR);Ventas con tarjeta (EUR);Otras ventas (EUR);Ventas totales (EUR);Gastos en efectivo (EUR);Retiradas de efectivo (EUR);Efectivo esperado (EUR);Efectivo contado (EUR);Descuadre (EUR);Motivo del descuadre;Propinas (EUR);Notas;Cerrado el;Cerrado por`. `Estado` is `Borrador` or `Cerrado`. |
 | `GET /api/reports/establishment/{id}/expenses.csv` | `gastos_{from}_{to}.csv` | One row per expense, oldest first: `Fecha;Categoría;Descripción;Proveedor;Importe (EUR);Medio de pago;Notas;Registrado por`, with the category and payment method in Spanish. |
-| `GET /api/reports/establishment/{id}/summary.csv` | `resumen_{from}_{to}.csv` | One row per day: `Fecha;Ventas (EUR);Gastos (EUR);Coste de personal (EUR);Margen (EUR);Estado del cierre;Descuadre (EUR)`. `Estado del cierre` is `Cerrado`, `Borrador`, `Falta el cierre` or `Sin cierre`; an unknown staff cost is left empty. |
+| `GET /api/reports/establishment/{id}/summary.csv` | `resumen_{from}_{to}.csv` | One row per day: `Fecha;Ventas (EUR);Gastos (EUR);Coste de personal (EUR);Margen (EUR);Estado del cierre;Descuadre (EUR)`. `Estado del cierre` is `Cerrado`, `Borrador`, `Falta el cierre` or `Sin cierre`; an unknown staff cost is left empty, and that day's `Margen` then takes off its payroll expenses, as in the summary. |
 
 ### Deleting and cash records
 

@@ -8,6 +8,7 @@ import com.moga.khronosdemo.entities.CashClosing;
 import com.moga.khronosdemo.entities.Expense;
 import com.moga.khronosdemo.entities.enums.DayClosingStatus;
 import com.moga.khronosdemo.entities.enums.ExpenseCategory;
+import com.moga.khronosdemo.entities.enums.LaborCostSource;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -27,9 +28,10 @@ import java.util.stream.Collectors;
  * The figures of the business summary for one period, from its cash closings, expenses and staff work.
  * Everything is added up in memory from what was loaded for the period, whatever its length.
  * <p>
- * The margin takes off the staff cost worked out from the hours, and leaves out PAYROLL expenses so pay
- * is not counted twice: sales - (expenses - payroll expenses) - staff cost, with an unknown staff cost
- * counted as 0. Each day's margin is worked out the same way.
+ * The margin is sales - (expenses - PAYROLL expenses) - staff cost. The staff cost is the cost of the
+ * hours worked when it is known, and the PAYROLL expenses are left out so pay is not counted twice. When
+ * it is not known (no worker has a rate), the PAYROLL expenses stand in for it, so pay is still taken
+ * off. The totals, each day and the previous period each decide this on their own figures.
  */
 final class BusinessPeriod {
 
@@ -86,7 +88,8 @@ final class BusinessPeriod {
                 sum(payroll(expenses)),
                 laborCost,
                 staff.plannedCost(),
-                grossMargin(),
+                margin(sales, expenses, laborCost),
+                laborCostSource(laborCost),
                 laborCostPercent(laborCost, sales),
                 figures.values().stream().map(CashClosing.Figures::difference).reduce(ZERO, BigDecimal::add),
                 (int) closed,
@@ -110,7 +113,7 @@ final class BusinessPeriod {
                     sales,
                     sum(dayExpenses),
                     laborCost,
-                    margin(sales, sum(dayExpenses), sum(payroll(dayExpenses)), laborCost),
+                    margin(sales, dayExpenses, laborCost),
                     closingStatus(day, activeDays),
                     dayFigures != null ? dayFigures.difference() : null));
         });
@@ -129,15 +132,14 @@ final class BusinessPeriod {
     }
 
     SummaryPeriodResponseDTO asPrevious() {
-        return new SummaryPeriodResponseDTO(from, to, sales(), sum(expenses), staff.actualCost(), grossMargin());
+        BigDecimal sales = sales();
+        BigDecimal laborCost = staff.actualCost();
+        return new SummaryPeriodResponseDTO(from, to, sales, sum(expenses), laborCost,
+                margin(sales, expenses, laborCost), laborCostSource(laborCost));
     }
 
     private BigDecimal sales() {
         return figures.values().stream().map(CashClosing.Figures::totalSales).reduce(ZERO, BigDecimal::add);
-    }
-
-    private BigDecimal grossMargin() {
-        return margin(sales(), sum(expenses), sum(payroll(expenses)), staff.actualCost());
     }
 
     private DayClosingStatus closingStatus(LocalDate day, Set<LocalDate> activeDays) {
@@ -161,9 +163,16 @@ final class BusinessPeriod {
         return !day.isBefore(from) && !day.isAfter(to);
     }
 
-    private static BigDecimal margin(BigDecimal sales, BigDecimal expenses, BigDecimal payrollExpenses,
-                                     BigDecimal laborCost) {
-        return sales.subtract(expenses.subtract(payrollExpenses)).subtract(laborCost != null ? laborCost : ZERO);
+    // sales - (expenses - payroll) - staff cost, where the staff cost is laborCost or, when that is unknown,
+    // the PAYROLL expenses among the given ones
+    private static BigDecimal margin(BigDecimal sales, List<Expense> expenses, BigDecimal laborCost) {
+        BigDecimal payrollExpenses = sum(payroll(expenses));
+        BigDecimal staffCost = laborCost != null ? laborCost : payrollExpenses;
+        return sales.subtract(sum(expenses).subtract(payrollExpenses)).subtract(staffCost);
+    }
+
+    private static LaborCostSource laborCostSource(BigDecimal laborCost) {
+        return laborCost != null ? LaborCostSource.HOURS : LaborCostSource.PAYROLL_EXPENSES;
     }
 
     // One decimal; null when there are no sales to divide by or the staff cost is unknown

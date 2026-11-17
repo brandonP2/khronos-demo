@@ -135,11 +135,11 @@ class BusinessCsvTests extends IntegrationTest {
 
         assertEquals("Fecha;Ventas (EUR);Gastos (EUR);Coste de personal (EUR);Margen (EUR);Estado del cierre;"
                 + "Descuadre (EUR)", lines.get(0));
-        // Nobody has a rate, so the staff cost is empty; the payroll expense is left out of the margin
+        // Nobody has a rate, so the staff cost is empty and the margin takes off the payroll expense instead
         assertEquals(List.of(
                 "08/05/2030;0,00;0,00;;0,00;Sin cierre;",
                 "09/05/2030;1000,00;30,00;;970,00;Cerrado;-10,00",
-                "10/05/2030;800,00;1500,00;;800,00;Borrador;-15,50",
+                "10/05/2030;800,00;1500,00;;-700,00;Borrador;-15,50",
                 "11/05/2030;0,00;60,00;;-60,00;Falta el cierre;",
                 "12/05/2030;0,00;0,00;;0,00;Sin cierre;"), lines.subList(1, lines.size()));
     }

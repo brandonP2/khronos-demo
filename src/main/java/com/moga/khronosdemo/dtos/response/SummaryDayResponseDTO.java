@@ -5,7 +5,8 @@ import com.moga.khronosdemo.entities.enums.DayClosingStatus;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-// One business day of the summary. margin is worked out like the totals' grossMargin
+// One business day of the summary. margin is worked out like the totals' grossMargin, with the day's own
+// figures: a null laborCost makes it take off the day's PAYROLL expenses instead
 public record SummaryDayResponseDTO(
         LocalDate date,
         // The total sales of the day's closing, or 0 without one
