@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import java.time.LocalDate;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -63,6 +64,27 @@ class WorkerVisibilityTests extends IntegrationTest {
         mockMvc.perform(getJson("/api/users/me").with(as(worker)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("worker"));
+    }
+
+    @Test
+    void workerSeesWhoRunsTheVenueButNotTheirContactDetails() throws Exception {
+        owner.setPhoneNumber("+34 600 000 000");
+        userRepository.save(owner);
+
+        mockMvc.perform(getJson("/api/establishments/{id}", venue.getId()).with(as(worker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ownerId").value(owner.getId()))
+                .andExpect(jsonPath("$.ownerName").value("First owner Last owner"))
+                .andExpect(jsonPath("$.ownerEmail").value(nullValue()))
+                .andExpect(jsonPath("$.ownerPhone").value(nullValue()));
+
+        mockMvc.perform(getJson("/api/establishments/{id}", venue.getId()).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ownerEmail").value("owner@example.test"))
+                .andExpect(jsonPath("$.ownerPhone").value("+34 600 000 000"));
+        mockMvc.perform(getJson("/api/establishments/owner/{id}", owner.getId()).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ownerEmail").value("owner@example.test"));
     }
 
     @Test
