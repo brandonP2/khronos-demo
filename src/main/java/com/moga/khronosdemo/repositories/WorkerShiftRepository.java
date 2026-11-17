@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface WorkerShiftRepository extends JpaRepository<WorkerShift, Long> {
 
@@ -83,6 +84,10 @@ public interface WorkerShiftRepository extends JpaRepository<WorkerShift, Long> 
     List<WorkerShift> findShiftsForClockIn(@Param("workerId") Long workerId,
                                            @Param("localTime") LocalDateTime localTime,
                                            @Param("latestStart") LocalDateTime latestStart);
+
+    // Reads only the worker's id, so the shift itself is first loaded once that worker is locked
+    @Query("select s.worker.userId from WorkerShift s where s.id = :id")
+    Optional<Long> findWorkerIdById(@Param("id") Long id);
 
     // Compares real intervals, so a shift can overlap shifts on the day before or after it
     @Query("""

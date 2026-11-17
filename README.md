@@ -124,6 +124,7 @@ These rules are enforced in the service layer. Breaking one returns **409 Confli
 - A shift can't start and end at the same time, and can't last more than 16 hours.
 - The zone must belong to the worker's establishment.
 - A worker's shifts can't overlap, including shifts on neighbouring days: a Friday shift from 18:00 to 02:00 clashes with a Saturday shift from 01:00. This also holds when two requests arrive at the same time: changes to the same worker's schedule take turns, so the second one sees the first.
+- Two changes to the same shift take turns too, and the second one starts from what the first one saved. If the first one gave the shift to a worker the second one didn't expect, the second one answers **409** `The shift was given to another worker while this request was waiting; reload it and try again`.
 - Shifts are created **in batches**: `POST /api/worker-shifts` takes a list. The whole batch is saved in a single transaction, so if any shift is invalid, none of them are saved. The error says which shift failed, for example `Shift [1]: ...`. The list is also checked against itself, so two shifts in the same request can't overlap.
 
 **Events and assignments**

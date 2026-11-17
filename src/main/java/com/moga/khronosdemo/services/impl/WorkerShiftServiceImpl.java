@@ -124,8 +124,7 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
     @Override
     public WorkerShiftResponseDTO update(Long id, WorkerShiftRequestDTO request) {
 
-        WorkerShift workerShift = getWorkerShift(id);
-        lockWorkers(List.of(workerShift.getWorker().getUserId(), request.workerId()));
+        WorkerShift workerShift = lockAndGet(id, request.workerId());
         Worker worker = getWorker(request.workerId());
         Zone zone = getZone(request.zoneId());
 
@@ -155,9 +154,8 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
     // Time entries matched to the shift are kept; the database clears their link (shift_id)
     @Override
     public void delete(Long id) {
-        WorkerShift workerShift = getWorkerShift(id);
+        WorkerShift workerShift = lockAndGet(id, null);
         Worker worker = workerShift.getWorker();
-        lockWorkers(List.of(worker.getUserId()));
         eventPublisher.publishEvent(new ShiftCancelledNotification(Recipient.of(worker), ShiftDetails.of(workerShift)));
         workerShiftRepository.delete(workerShift);
         assignmentReconciler.unassignUncoveredEvents(worker);
@@ -198,6 +196,24 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
     // sees the first one's shifts and assignments instead of both passing the checks.
     private void lockWorkers(List<Long> workerIds) {
         workerRepository.lockAllById(workerIds);
+    }
+
+    // Locks the shift's worker, and the worker it is being given to if any, in id order, and only then
+    // loads the shift. A second change to the same shift waits for the first and starts from what it
+    // committed, not from a copy read before the wait. If the shift was given to yet another worker
+    // meanwhile, that worker's lock is not held and taking it now could deadlock, so the request is
+    // refused and can be sent again.
+    private WorkerShift lockAndGet(Long id, Long newWorkerId) {
+        Long workerId = workerShiftRepository.findWorkerIdById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("WorkerShift", id));
+        List<Long> lockedIds = newWorkerId != null ? List.of(workerId, newWorkerId) : List.of(workerId);
+        lockWorkers(lockedIds);
+        WorkerShift workerShift = getWorkerShift(id);
+        if (!lockedIds.contains(workerShift.getWorker().getUserId())) {
+            throw new BusinessRuleException("The shift was given to another worker while this request was"
+                    + " waiting; reload it and try again");
+        }
+        return workerShift;
     }
 
     private WorkerShift getWorkerShift(Long id) {

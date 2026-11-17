@@ -9,6 +9,7 @@ import com.moga.khronosdemo.entities.Worker;
 import com.moga.khronosdemo.entities.WorkerShift;
 import com.moga.khronosdemo.entities.Zone;
 import com.moga.khronosdemo.exceptions.BusinessRuleException;
+import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.support.IntegrationTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -125,6 +126,72 @@ class ScheduleLockingTests extends IntegrationTest {
     }
 
     @Test
+    void aSecondEditOfAShiftStartsFromWhatTheFirstOneCommitted() throws Exception {
+        WorkerShift evening = createShift(worker, zone, DAY, "18:00", "23:00");
+        Event dinner = createEvent(zone, DAY.atTime(19, 0));
+        // The first change gives the shift to the other worker and assigns them to the dinner it covers
+        Future<?> first = holdOpen(() -> {
+            workerShiftService.update(evening.getId(), shift(otherWorker, "18:00", "23:00"));
+            workerEventService.create(List.of(new WorkerEventRequestDTO(otherWorker.getUserId(), dinner.getId())));
+        });
+
+        Future<?> second = pool.submit(() -> workerShiftService.update(evening.getId(), shift(otherWorker, "20:00", "23:00")));
+        assertStillWaiting(second);
+
+        releaseFirst.countDown();
+        first.get(10, TimeUnit.SECONDS);
+        second.get(10, TimeUnit.SECONDS);
+        // The second edit knew the shift was already the other worker's, so it checked their assignments:
+        // 20:00-23:00 no longer covers the dinner at 19:00
+        assertEquals(otherWorker.getUserId(), workerShiftRepository.findWorkerIdById(evening.getId()).orElseThrow());
+        assertEquals(LocalTime.of(20, 0), workerShiftRepository.findById(evening.getId()).orElseThrow().getStartTime());
+        assertEquals(0, workerEventRepository.count());
+    }
+
+    @Test
+    void anEditOfAShiftDeletedMeanwhileFindsNoShift() throws Exception {
+        WorkerShift evening = createShift(worker, zone, DAY, "18:00", "23:00");
+        Future<?> first = holdOpen(() -> workerShiftService.delete(evening.getId()));
+
+        Future<?> second = pool.submit(() -> workerShiftService.update(evening.getId(), shift(worker, "19:00", "23:00")));
+        assertStillWaiting(second);
+
+        releaseFirst.countDown();
+        first.get(10, TimeUnit.SECONDS);
+        assertFailsWith(ResourceNotFoundException.class, second);
+        assertEquals(0, workerShiftRepository.count());
+    }
+
+    @Test
+    void aShiftDeletedTwiceAtTheSameTimeIsDeletedOnce() throws Exception {
+        WorkerShift evening = createShift(worker, zone, DAY, "18:00", "23:00");
+        Future<?> first = holdOpen(() -> workerShiftService.delete(evening.getId()));
+
+        Future<?> second = pool.submit(() -> workerShiftService.delete(evening.getId()));
+        assertStillWaiting(second);
+
+        releaseFirst.countDown();
+        first.get(10, TimeUnit.SECONDS);
+        assertFailsWith(ResourceNotFoundException.class, second);
+    }
+
+    @Test
+    void anEditIsRefusedWhenTheShiftWasGivenToAWorkerItDidNotLock() throws Exception {
+        WorkerShift evening = createShift(worker, zone, DAY, "18:00", "23:00");
+        Future<?> first = holdOpen(() -> workerShiftService.update(evening.getId(), shift(otherWorker, "18:00", "23:00")));
+
+        // Sent for the shift as it was: still the first worker's, so only that worker is locked
+        Future<?> second = pool.submit(() -> workerShiftService.update(evening.getId(), shift(worker, "19:00", "23:00")));
+        assertStillWaiting(second);
+
+        releaseFirst.countDown();
+        first.get(10, TimeUnit.SECONDS);
+        assertFailsWithBusinessRule(second);
+        assertEquals(otherWorker.getUserId(), workerShiftRepository.findWorkerIdById(evening.getId()).orElseThrow());
+        assertEquals(LocalTime.of(18, 0), workerShiftRepository.findById(evening.getId()).orElseThrow().getStartTime());
+    }
+
+    @Test
     void movingAnEventWaitsForAnAssignmentBeingMadeToIt() throws Exception {
         createShift(worker, zone, DAY, "18:00", "23:00");
         Event dinner = createEvent(zone, DAY.atTime(19, 0));
@@ -227,8 +294,12 @@ class ScheduleLockingTests extends IntegrationTest {
     }
 
     private static void assertFailsWithBusinessRule(Future<?> second) {
+        assertFailsWith(BusinessRuleException.class, second);
+    }
+
+    private static void assertFailsWith(Class<? extends Exception> expected, Future<?> second) {
         ExecutionException failure = assertThrows(ExecutionException.class, () -> second.get(10, TimeUnit.SECONDS));
-        assertInstanceOf(BusinessRuleException.class, failure.getCause());
+        assertInstanceOf(expected, failure.getCause());
     }
 
     private EventRequestDTO moved(Event event, LocalDateTime dateTime) {
