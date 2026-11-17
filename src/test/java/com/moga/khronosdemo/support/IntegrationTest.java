@@ -175,8 +175,11 @@ public abstract class IntegrationTest {
     }
 
     protected RequestPostProcessor as(Long userId) {
-        String token = tokenService.issue(userDetailsService.loadUserById(userId).orElseThrow()).accessToken();
-        return bearer(token);
+        return bearer(tokenFor(userId));
+    }
+
+    protected String tokenFor(Long userId) {
+        return tokenService.issue(userDetailsService.loadUserById(userId).orElseThrow()).accessToken();
     }
 
     protected RequestPostProcessor bearer(String token) {

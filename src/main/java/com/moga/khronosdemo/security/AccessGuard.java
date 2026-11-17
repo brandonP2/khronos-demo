@@ -1,5 +1,6 @@
 package com.moga.khronosdemo.security;
 
+import com.moga.khronosdemo.entities.enums.Role;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
@@ -49,6 +50,12 @@ public class AccessGuard {
 
     public boolean isSelf(Long userId) {
         return userId != null && userId.equals(currentUserId());
+    }
+
+    public boolean isPlatformAdmin(Long userId) {
+        return userId != null && userRepository.findById(userId)
+                .map(user -> user.getRole() == Role.PLATFORM_ADMIN)
+                .orElse(false);
     }
 
     // An unlinked worker account can only be claimed by whoever created it, never by another owner

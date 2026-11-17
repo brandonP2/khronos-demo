@@ -1,6 +1,7 @@
 package com.moga.khronosdemo.services.impl;
 
 import com.moga.khronosdemo.dtos.request.ChangePasswordRequestDTO;
+import com.moga.khronosdemo.dtos.request.PasswordResetRequestDTO;
 import com.moga.khronosdemo.dtos.request.UserRequestDTO;
 import com.moga.khronosdemo.dtos.request.UserUpdateRequestDTO;
 import com.moga.khronosdemo.dtos.response.UserResponseDTO;
@@ -113,6 +114,15 @@ public class UserServiceImpl implements UserService {
         user.setPassword(passwordEncoder.encode(request.newPassword()));
         user.setCredentialsChangedAt(Instant.now());
 
+    }
+
+    // Set by an admin or the worker's owner, so there is no current password to check. As with
+    // changePassword, every token issued before the reset stops working.
+    @Override
+    public void resetPassword(Long id, PasswordResetRequestDTO request) {
+        User user = getUser(id);
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        user.setCredentialsChangedAt(Instant.now());
     }
 
     @Override
