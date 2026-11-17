@@ -208,7 +208,7 @@ RESEND_API_KEY=...
 JWT_SECRET=<output of: openssl rand -base64 48>
 ```
 
-Then run `mvn spring-boot:run`, or start `KhronosDemoApplication` from your IDE. Swagger UI is at http://localhost:8080/swagger-ui.html: call `POST /api/auth/login`, then paste the `accessToken` into **Authorize**.
+Then run `mvn spring-boot:run`, or start `KhronosDemoApplication` from your IDE. `mvn test -Dtest=TokenFlowTests` checks the token rules without a database. Swagger UI is at http://localhost:8080/swagger-ui.html: call `POST /api/auth/login`, then paste the `accessToken` into **Authorize**.
 
 Hibernate creates and updates the tables on startup (`ddl-auto=update`). That includes the `credentials_changed_at` column on `users`, which is used to revoke tokens.
 
