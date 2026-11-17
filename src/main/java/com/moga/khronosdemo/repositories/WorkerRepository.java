@@ -9,10 +9,18 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface WorkerRepository extends JpaRepository<Worker, Long> {
 
     List<Worker> findByEstablishment_Id(Long establishmentId);
+
+    // For the reports, which show each worker's name
+    @Query("select w from Worker w join fetch w.user where w.establishment.id = :establishmentId order by w.userId")
+    List<Worker> findWithUserByEstablishment(@Param("establishmentId") Long establishmentId);
+
+    @Query("select w from Worker w join fetch w.user join fetch w.establishment where w.userId = :id")
+    Optional<Worker> findWithUserAndEstablishmentById(@Param("id") Long id);
 
     // Locks the workers' rows until the transaction ends. Rows are locked in id order, so two
     // requests that touch overlapping sets of workers wait for each other instead of deadlocking.

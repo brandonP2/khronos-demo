@@ -47,6 +47,17 @@ public interface WorkerShiftRepository extends JpaRepository<WorkerShift, Long> 
                                  @Param("from") LocalDate from,
                                  @Param("to") LocalDate to);
 
+    // Every shift of the establishment's workers dated from 'from' to 'to', both included, for the reports
+    @Query("""
+            select s from WorkerShift s
+            where s.worker.establishment.id = :establishmentId
+              and s.date >= :from and s.date <= :to
+            order by s.date, s.startTime, s.id
+            """)
+    List<WorkerShift> findByEstablishmentBetween(@Param("establishmentId") Long establishmentId,
+                                                 @Param("from") LocalDate from,
+                                                 @Param("to") LocalDate to);
+
     // The event's local date-time must fall inside the shift's real interval [start, end), so an
     // event at 01:00 on Saturday is covered by a Friday shift from 18:00 to 02:00.
     @Query("""
