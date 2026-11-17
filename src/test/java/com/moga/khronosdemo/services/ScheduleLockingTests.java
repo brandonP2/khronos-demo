@@ -272,6 +272,29 @@ class ScheduleLockingTests extends IntegrationTest {
         assertEquals(2, workerShiftRepository.count());
     }
 
+    @Test
+    void lockingASingleRowWaitsForTheSameLockAndFindsNothingForAMissingId() throws Exception {
+        Event dinner = createEvent(zone, DAY.atTime(19, 0));
+        // Moving the event locks it; creating the shift locks the worker
+        Future<?> first = holdOpen(() -> {
+            eventService.update(dinner.getId(), moved(dinner, DAY.atTime(20, 0)));
+            workerShiftService.create(List.of(shift(worker, "18:00", "23:00")));
+        });
+
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        Future<Boolean> second = pool.submit(() -> transaction.execute(status ->
+                eventRepository.lockById(dinner.getId()).isPresent()
+                        && workerRepository.lockById(worker.getUserId()).isPresent()));
+        assertStillWaiting(second);
+
+        releaseFirst.countDown();
+        first.get(10, TimeUnit.SECONDS);
+        assertTrue(second.get(10, TimeUnit.SECONDS));
+        Boolean noneMissing = transaction.execute(status ->
+                eventRepository.lockById(-1L).isEmpty() && workerRepository.lockById(-1L).isEmpty());
+        assertTrue(noneMissing);
+    }
+
     /** Runs the change inside a transaction that stays open, holding its locks, until releaseFirst. */
     private Future<?> holdOpen(Runnable change) throws InterruptedException {
         TransactionTemplate transaction = new TransactionTemplate(transactionManager);

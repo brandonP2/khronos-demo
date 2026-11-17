@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface EventRepository extends JpaRepository<Event, Long> {
 
@@ -43,4 +44,9 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from Event e where e.id in :ids order by e.id")
     List<Event> lockAllById(@Param("ids") Collection<Long> ids);
+
+    // Locks one event's row in the same way; empty when there is no such event
+    default Optional<Event> lockById(Long id) {
+        return lockAllById(List.of(id)).stream().findFirst();
+    }
 }

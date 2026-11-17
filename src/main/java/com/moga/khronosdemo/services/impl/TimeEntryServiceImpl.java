@@ -279,14 +279,12 @@ public class TimeEntryServiceImpl implements TimeEntryService {
 
     // The worker acting on their own entries; a WORKER account that is not linked to a venue cannot clock in
     private Worker lockOwnWorker(Long workerId) {
-        return workerRepository.lockAllById(List.of(workerId)).stream()
-                .findFirst()
+        return workerRepository.lockById(workerId)
                 .orElseThrow(() -> new BusinessRuleException("Your account is not linked to an establishment"));
     }
 
     private Worker lockWorker(Long workerId) {
-        return workerRepository.lockAllById(List.of(workerId)).stream()
-                .findFirst()
+        return workerRepository.lockById(workerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Worker", workerId));
     }
 

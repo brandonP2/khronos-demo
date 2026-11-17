@@ -27,4 +27,9 @@ public interface WorkerRepository extends JpaRepository<Worker, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select w from Worker w where w.userId in :ids order by w.userId")
     List<Worker> lockAllById(@Param("ids") Collection<Long> ids);
+
+    // Locks one worker's row in the same way; empty when there is no such worker
+    default Optional<Worker> lockById(Long id) {
+        return lockAllById(List.of(id)).stream().findFirst();
+    }
 }

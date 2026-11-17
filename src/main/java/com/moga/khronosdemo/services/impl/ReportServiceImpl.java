@@ -49,8 +49,8 @@ public class ReportServiceImpl implements ReportService {
     static final String CURRENCY = "EUR";
 
     private static final Comparator<Worker> BY_NAME = Comparator
-            .comparing((Worker worker) -> nullToEmpty(worker.getUser().getFirstName()), String.CASE_INSENSITIVE_ORDER)
-            .thenComparing(worker -> nullToEmpty(worker.getUser().getLastName()), String.CASE_INSENSITIVE_ORDER)
+            .comparing((Worker worker) -> Objects.toString(worker.getUser().getFirstName(), ""), String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(worker -> Objects.toString(worker.getUser().getLastName(), ""), String.CASE_INSENSITIVE_ORDER)
             .thenComparing(Worker::getUserId);
 
     private final EstablishmentRepository establishmentRepository;
@@ -228,9 +228,5 @@ public class ReportServiceImpl implements ReportService {
     // Adds up the known costs; null when no worker has one
     private static BigDecimal sumKnown(List<BigDecimal> costs) {
         return costs.stream().filter(Objects::nonNull).reduce(BigDecimal::add).orElse(null);
-    }
-
-    private static String nullToEmpty(String value) {
-        return value != null ? value : "";
     }
 }

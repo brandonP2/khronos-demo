@@ -136,8 +136,7 @@ public class EventServiceImpl implements EventService {
     // this change commits and then sees it, instead of acting on the event's old time or zone. Assignments
     // are only added under the event's lock, so none can appear after the workers are read here.
     private Event lockWithAssignedWorkers(Long id) {
-        Event event = eventRepository.lockAllById(List.of(id)).stream()
-                .findFirst()
+        Event event = eventRepository.lockById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Event", id));
         List<Long> workerIds = workerEventRepository.findWorkerIdsByEventId(id);
         if (!workerIds.isEmpty()) {

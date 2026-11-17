@@ -139,8 +139,7 @@ public class WorkerServiceImpl implements WorkerService {
 
     // Holds the worker's row lock until commit, the lock their time entries and schedule changes take
     private Worker lockWorker(Long userId) {
-        return workerRepository.lockAllById(List.of(userId)).stream()
-                .findFirst()
+        return workerRepository.lockById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Worker", userId));
     }
 

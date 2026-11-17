@@ -14,6 +14,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 import static com.moga.khronosdemo.services.impl.CsvWriter.text;
 
@@ -39,8 +40,10 @@ final class ReportCsvFormatter {
 
     // One person's entries together, in the order they happened
     private static final Comparator<TimeEntry> BY_PERSON_THEN_CLOCK_IN = Comparator
-            .comparing((TimeEntry entry) -> nullToEmpty(entry.getWorker().getUser().getFirstName()), String.CASE_INSENSITIVE_ORDER)
-            .thenComparing(entry -> nullToEmpty(entry.getWorker().getUser().getLastName()), String.CASE_INSENSITIVE_ORDER)
+            .comparing((TimeEntry entry) -> Objects.toString(entry.getWorker().getUser().getFirstName(), ""),
+                    String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(entry -> Objects.toString(entry.getWorker().getUser().getLastName(), ""),
+                    String.CASE_INSENSITIVE_ORDER)
             .thenComparing(entry -> entry.getWorker().getUserId())
             .thenComparing(TimeEntry::getClockIn)
             .thenComparing(TimeEntry::getId);
@@ -114,9 +117,5 @@ final class ReportCsvFormatter {
             case CLOSED -> "Cerrado";
             case VOIDED -> "Anulado";
         };
-    }
-
-    private static String nullToEmpty(String value) {
-        return value != null ? value : "";
     }
 }
