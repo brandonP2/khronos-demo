@@ -4,8 +4,11 @@ import com.moga.khronosdemo.entities.enums.Role;
 import jakarta.persistence.*;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
+import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Entity
 @Table(name="users")
@@ -134,6 +137,15 @@ public class User {
 
     public void setCreatedBy(User createdBy) {
         this.createdBy = createdBy;
+    }
+
+    // The name kept on records this user makes, such as history rows: first and last name, or the
+    // username when both are empty
+    public String displayName() {
+        String name = Stream.of(firstName, lastName)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.joining(" "));
+        return name.isEmpty() ? username : name;
     }
 
 }

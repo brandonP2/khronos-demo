@@ -32,8 +32,6 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 @Transactional
@@ -273,7 +271,7 @@ public class TimeEntryServiceImpl implements TimeEntryService {
     }
 
     private void record(TimeEntry entry, TimeEntryAction action, User author, String reason) {
-        timeEntryChangeRepository.save(new TimeEntryChange(entry, action, auditNow(), author, displayName(author),
+        timeEntryChangeRepository.save(new TimeEntryChange(entry, action, auditNow(), author, author.displayName(),
                 clean(reason)));
     }
 
@@ -318,12 +316,5 @@ public class TimeEntryServiceImpl implements TimeEntryService {
 
     private static String clean(String text) {
         return StringUtils.hasText(text) ? text.strip() : null;
-    }
-
-    private static String displayName(User user) {
-        String name = Stream.of(user.getFirstName(), user.getLastName())
-                .filter(StringUtils::hasText)
-                .collect(Collectors.joining(" "));
-        return name.isEmpty() ? user.getUsername() : name;
     }
 }

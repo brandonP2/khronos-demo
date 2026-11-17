@@ -13,6 +13,7 @@ import com.moga.khronosdemo.entities.enums.Role;
 import com.moga.khronosdemo.entities.enums.TimeEntrySource;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
+import com.moga.khronosdemo.repositories.ExpenseRepository;
 import com.moga.khronosdemo.repositories.TimeEntryChangeRepository;
 import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
@@ -102,6 +103,9 @@ public abstract class IntegrationTest {
 
     @Autowired
     protected TimeEntryChangeRepository timeEntryChangeRepository;
+
+    @Autowired
+    protected ExpenseRepository expenseRepository;
 
     @Autowired
     protected PasswordEncoder passwordEncoder;

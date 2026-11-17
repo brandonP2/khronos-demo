@@ -3,6 +3,7 @@ package com.moga.khronosdemo.security;
 import com.moga.khronosdemo.entities.enums.Role;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
+import com.moga.khronosdemo.repositories.ExpenseRepository;
 import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.repositories.WorkerEventRepository;
@@ -28,11 +29,13 @@ public class AccessGuard {
     private final WorkerEventRepository workerEventRepository;
     private final UserRepository userRepository;
     private final TimeEntryRepository timeEntryRepository;
+    private final ExpenseRepository expenseRepository;
 
     public AccessGuard(EstablishmentRepository establishmentRepository, ZoneRepository zoneRepository,
                        EventRepository eventRepository, WorkerRepository workerRepository,
                        WorkerShiftRepository workerShiftRepository, WorkerEventRepository workerEventRepository,
-                       UserRepository userRepository, TimeEntryRepository timeEntryRepository) {
+                       UserRepository userRepository, TimeEntryRepository timeEntryRepository,
+                       ExpenseRepository expenseRepository) {
         this.establishmentRepository = establishmentRepository;
         this.zoneRepository = zoneRepository;
         this.eventRepository = eventRepository;
@@ -41,6 +44,7 @@ public class AccessGuard {
         this.workerEventRepository = workerEventRepository;
         this.userRepository = userRepository;
         this.timeEntryRepository = timeEntryRepository;
+        this.expenseRepository = expenseRepository;
     }
 
     public Long currentUserId() {
@@ -172,6 +176,13 @@ public class AccessGuard {
     public boolean isOwnTimeEntry(Long timeEntryId) {
         return timeEntryId != null && timeEntryRepository.findById(timeEntryId)
                 .map(entry -> isSelf(entry.getWorker().getUserId()))
+                .orElse(false);
+    }
+
+    // Expenses belong to the establishment they were entered for, which never changes
+    public boolean ownsExpense(Long expenseId) {
+        return expenseId != null && expenseRepository.findEstablishmentIdById(expenseId)
+                .map(this::ownsEstablishment)
                 .orElse(false);
     }
 }
