@@ -95,6 +95,34 @@ public class ReportController {
         return businessSummaryService.summary(establishmentId, from, to);
     }
 
+    // One row per cash closing, earliest day first
+    @GetMapping("/establishment/{establishmentId}/cash-closings.csv")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsEstablishment(#establishmentId)")
+    public ResponseEntity<byte[]> cashClosingsCsv(@PathVariable Long establishmentId,
+                                                  @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                                  @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return csv(businessSummaryService.cashClosingsCsv(establishmentId, from, to),
+                "cierres-caja_" + from + "_" + to + ".csv");
+    }
+
+    // One row per expense, oldest first
+    @GetMapping("/establishment/{establishmentId}/expenses.csv")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsEstablishment(#establishmentId)")
+    public ResponseEntity<byte[]> expensesCsv(@PathVariable Long establishmentId,
+                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return csv(businessSummaryService.expensesCsv(establishmentId, from, to), "gastos_" + from + "_" + to + ".csv");
+    }
+
+    // One row per day of the summary
+    @GetMapping("/establishment/{establishmentId}/summary.csv")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsEstablishment(#establishmentId)")
+    public ResponseEntity<byte[]> summaryCsv(@PathVariable Long establishmentId,
+                                             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return csv(businessSummaryService.summaryCsv(establishmentId, from, to), "resumen_" + from + "_" + to + ".csv");
+    }
+
     private static ResponseEntity<byte[]> csv(byte[] body, String filename) {
         return ResponseEntity.ok()
                 .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
