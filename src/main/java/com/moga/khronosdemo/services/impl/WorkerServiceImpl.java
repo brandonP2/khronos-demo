@@ -1,7 +1,10 @@
 package com.moga.khronosdemo.services.impl;
 
 import com.moga.khronosdemo.dtos.request.WorkerRequestDTO;
+import com.moga.khronosdemo.dtos.request.WorkerWithUserRequestDTO;
+import com.moga.khronosdemo.dtos.response.UserResponseDTO;
 import com.moga.khronosdemo.dtos.response.WorkerResponseDTO;
+import com.moga.khronosdemo.dtos.response.WorkerWithUserResponseDTO;
 import com.moga.khronosdemo.entities.Establishment;
 import com.moga.khronosdemo.entities.enums.Role;
 import com.moga.khronosdemo.entities.User;
@@ -12,6 +15,7 @@ import com.moga.khronosdemo.mappers.WorkerMapper;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.repositories.WorkerRepository;
+import com.moga.khronosdemo.services.UserService;
 import com.moga.khronosdemo.services.WorkerService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,13 +30,16 @@ public class WorkerServiceImpl implements WorkerService {
     private final UserRepository userRepository;
     private final EstablishmentRepository establishmentRepository;
     private final WorkerMapper workerMapper;
+    private final UserService userService;
 
     public WorkerServiceImpl(WorkerRepository workerRepository, UserRepository userRepository,
-                             EstablishmentRepository establishmentRepository, WorkerMapper workerMapper) {
+                             EstablishmentRepository establishmentRepository, WorkerMapper workerMapper,
+                             UserService userService) {
         this.workerRepository = workerRepository;
         this.userRepository = userRepository;
         this.establishmentRepository = establishmentRepository;
         this.workerMapper = workerMapper;
+        this.userService = userService;
     }
 
     @Override
@@ -47,6 +54,14 @@ public class WorkerServiceImpl implements WorkerService {
         }
         Worker worker = workerMapper.toEntity(request, user, getEstablishment(request.establishmentId()));
         return workerMapper.toResponse(workerRepository.save(worker));
+    }
+
+    // The account and its link share this transaction, so if linking fails no account is left behind
+    @Override
+    public WorkerWithUserResponseDTO createWithUser(WorkerWithUserRequestDTO request, Long creatorId) {
+        UserResponseDTO user = userService.createWorker(request.user(), creatorId);
+        Worker worker = new Worker(userRepository.getReferenceById(user.id()), getEstablishment(request.establishmentId()));
+        return new WorkerWithUserResponseDTO(user, workerMapper.toResponse(workerRepository.save(worker)));
     }
 
     @Override

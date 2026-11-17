@@ -92,7 +92,82 @@ class WorkerOnboardingTests extends IntegrationTest {
         assertNull(createdBy(accountId));
     }
 
+    // ---- Account and link in one request ----
+
+    @Test
+    void createsTheAccountAndItsLinkInOneRequest() throws Exception {
+        MvcResult result = mockMvc.perform(postJson("/api/workers/with-user", withUserJson(venueA.getId(), "lucia"))
+                        .with(as(ownerA)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.user.username").value("lucia"))
+                .andExpect(jsonPath("$.user.role").value("WORKER"))
+                .andExpect(jsonPath("$.user.email").value("lucia@example.test"))
+                .andExpect(jsonPath("$.user.password").doesNotExist())
+                .andExpect(jsonPath("$.worker.establishmentId").value(venueA.getId()))
+                .andExpect(jsonPath("$.worker.isActive").value(true))
+                .andReturn();
+
+        Long userId = longAt(result, "$.user.id");
+        assertEquals(userId, longAt(result, "$.worker.userId"));
+        assertEquals(ownerA.getId(), createdBy(userId));
+        assertEquals(venueA.getId(), workerRepository.findById(userId).orElseThrow().getEstablishment().getId());
+    }
+
+    @Test
+    void ownerCannotCreateStaffForAnotherOwnersVenue() throws Exception {
+        mockMvc.perform(postJson("/api/workers/with-user", withUserJson(venueA.getId(), "lucia")).with(as(ownerB)))
+                .andExpect(status().isForbidden());
+
+        assertFalse(userRepository.existsByUsername("lucia"));
+    }
+
+    @Test
+    void leavesNoAccountBehindWhenTheLinkFails() throws Exception {
+        long missingVenue = venueA.getId() + venueB.getId() + 1000;
+
+        mockMvc.perform(postJson("/api/workers/with-user", withUserJson(missingVenue, "lucia")).with(as(admin)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Establishment not found with id " + missingVenue));
+
+        assertFalse(userRepository.existsByUsername("lucia"));
+        assertEquals(0, workerRepository.count());
+    }
+
+    @Test
+    void leavesNoLinkBehindWhenTheAccountIsRejected() throws Exception {
+        createUser("lucia", Role.WORKER);
+
+        mockMvc.perform(postJson("/api/workers/with-user", withUserJson(venueA.getId(), "lucia")).with(as(ownerA)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Username already in use"));
+
+        assertEquals(0, workerRepository.count());
+    }
+
+    @Test
+    void validatesTheNestedAccount() throws Exception {
+        mockMvc.perform(postJson("/api/workers/with-user", """
+                        { "establishmentId": %d, "user": { "username": "lucia", "password": "short",
+                          "firstName": "Lucia", "lastName": "Diaz", "email": "not-an-email" } }
+                        """.formatted(venueA.getId())).with(as(ownerA)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors['user.password']").exists())
+                .andExpect(jsonPath("$.fieldErrors['user.email']").exists());
+
+        mockMvc.perform(postJson("/api/workers/with-user", """
+                        { "establishmentId": %d }
+                        """.formatted(venueA.getId())).with(as(ownerA)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.user").exists());
+    }
+
     // ---- Helpers ----
+
+    private static String withUserJson(Long establishmentId, String username) {
+        return """
+                { "establishmentId": %d, "user": %s }
+                """.formatted(establishmentId, userJson(username));
+    }
 
     private Long createAccountAs(User creator, String username) throws Exception {
         MvcResult result = mockMvc.perform(postJson("/api/users/create/worker", userJson(username)).with(as(creator)))
