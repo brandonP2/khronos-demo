@@ -221,6 +221,27 @@ Every error comes back in the same shape:
 
 `fieldErrors` only appears on validation errors.
 
+`code` only appears on the authentication errors below. It is a stable value for clients to tell these cases apart, while the wording of `message` may change. Clients should treat a missing or unknown `code` like any other error with that status.
+
+```json
+{
+  "timestamp": "2026-11-10T10:15:30Z",
+  "status": 401,
+  "error": "Unauthorized",
+  "message": "This account is disabled",
+  "path": "/api/auth/login",
+  "code": "ACCOUNT_DISABLED"
+}
+```
+
+| `code` | Status | When |
+|---|---|---|
+| `INVALID_CREDENTIALS` | 401 | Login with an unknown username or a wrong password, whatever the state of the account |
+| `ACCOUNT_DISABLED` | 401 | Login with the right password for a disabled account, or any request with a token of a disabled account |
+| `SESSION_EXPIRED` | 401 | The token has expired, was revoked by a password change, belongs to a deleted user or is otherwise invalid |
+| `AUTHENTICATION_REQUIRED` | 401 | An endpoint that needs a token was called without one |
+| `TOO_MANY_ATTEMPTS` | 429 | Too many failed logins for the username and IP, or for the IP; wait the seconds given in `Retry-After` |
+
 | Status | When |
 |---|---|
 | 400 | Validation failed, or the JSON, a parameter or a date/time format is invalid, or a batch has too many items |

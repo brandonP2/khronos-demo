@@ -1,14 +1,23 @@
 package com.moga.khronosdemo.api;
 
 import com.jayway.jsonpath.JsonPath;
+import com.moga.khronosdemo.entities.User;
 import com.moga.khronosdemo.entities.Worker;
 import com.moga.khronosdemo.support.IntegrationTest;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.notNullValue;
@@ -20,6 +29,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class AuthTests extends IntegrationTest {
+
+    @Autowired
+    private JwtEncoder jwtEncoder;
 
     @Test
     void signsInAndUsesTheTokenOnTheNextRequest() throws Exception {
@@ -45,19 +57,53 @@ class AuthTests extends IntegrationTest {
         login("ana", "wrong-password", "198.51.100.2")
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value(401))
-                .andExpect(jsonPath("$.message").value("Invalid username or password"));
+                .andExpect(jsonPath("$.message").value("Invalid username or password"))
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
         login("nobody", PASSWORD, "198.51.100.2")
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("Invalid username or password"));
+                .andExpect(jsonPath("$.message").value("Invalid username or password"))
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
     }
 
     @Test
     void requestsWithoutAValidTokenAreRejected() throws Exception {
         mockMvc.perform(getJson("/api/users/me"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Authentication is required to access this resource"))
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
         mockMvc.perform(getJson("/api/users/me").with(bearer("not-a-token")))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.status").value(401));
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("SESSION_EXPIRED"));
+    }
+
+    @Test
+    void anExpiredTokenIsReportedAsAnExpiredSession() throws Exception {
+        User ana = createOwner("ana");
+        Instant issuedAt = Instant.now().minus(Duration.ofHours(2));
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer("khronos")
+                .subject(String.valueOf(ana.getId()))
+                .issuedAt(issuedAt)
+                .expiresAt(issuedAt.plus(Duration.ofHours(1)))
+                .claim("role", ana.getRole().name())
+                .build();
+        String token = jwtEncoder
+                .encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
+                .getTokenValue();
+
+        mockMvc.perform(getJson("/api/users/me").with(bearer(token)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Your session has expired or is no longer valid. Sign in again"))
+                .andExpect(jsonPath("$.code").value("SESSION_EXPIRED"));
+    }
+
+    @Test
+    void otherErrorsHaveNoCode() throws Exception {
+        mockMvc.perform(postJson("/api/auth/login", "{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors").exists())
+                .andExpect(jsonPath("$.code").doesNotExist());
     }
 
     @Test
@@ -66,7 +112,8 @@ class AuthTests extends IntegrationTest {
 
         login("lucia", PASSWORD, "198.51.100.3")
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("This account is disabled"));
+                .andExpect(jsonPath("$.message").value("This account is disabled"))
+                .andExpect(jsonPath("$.code").value("ACCOUNT_DISABLED"));
     }
 
     @Test
@@ -77,7 +124,8 @@ class AuthTests extends IntegrationTest {
 
         Map<String, Object> deactivated = bodyWithoutTimestamp(login("lucia", "wrong-password", ip)
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("Invalid username or password")));
+                .andExpect(jsonPath("$.message").value("Invalid username or password"))
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS")));
         Map<String, Object> active = bodyWithoutTimestamp(login("ana", "wrong-password", ip)
                 .andExpect(status().isUnauthorized()));
         Map<String, Object> unknown = bodyWithoutTimestamp(login("nobody", "wrong-password", ip)
@@ -114,6 +162,7 @@ class AuthTests extends IntegrationTest {
                 .andExpect(jsonPath("$.status").value(429))
                 .andExpect(jsonPath("$.error").value("Too Many Requests"))
                 .andExpect(jsonPath("$.message").value(startsWith("Too many failed sign-in attempts")))
+                .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"))
                 .andExpect(jsonPath("$.path").value("/api/auth/login"))
                 .andReturn();
         long retryAfter = Long.parseLong(blocked.getResponse().getHeader(HttpHeaders.RETRY_AFTER));
@@ -142,7 +191,8 @@ class AuthTests extends IntegrationTest {
         }
         login("made-up-45", "wrong-password", ip)
                 .andExpect(status().isTooManyRequests())
-                .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
+                .andExpect(header().exists(HttpHeaders.RETRY_AFTER))
+                .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"));
 
         // ...so the address stays blocked, even with the right password, while others are not affected
         login("victim", PASSWORD, ip).andExpect(status().isTooManyRequests());

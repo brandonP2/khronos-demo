@@ -44,7 +44,8 @@ class PasswordResetTests extends IntegrationTest {
 
         mockMvc.perform(getJson("/api/users/me").with(bearer(oldToken)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("Your session has expired or is no longer valid. Sign in again"));
+                .andExpect(jsonPath("$.message").value("Your session has expired or is no longer valid. Sign in again"))
+                .andExpect(jsonPath("$.code").value("SESSION_EXPIRED"));
         login("worker", PASSWORD).andExpect(status().isUnauthorized());
         login("worker", NEW_PASSWORD).andExpect(status().isOk());
         assertTrue(passwordEncoder.matches(NEW_PASSWORD,

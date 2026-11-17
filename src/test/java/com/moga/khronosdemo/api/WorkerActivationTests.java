@@ -53,7 +53,8 @@ class WorkerActivationTests extends IntegrationTest {
 
         mockMvc.perform(getJson("/api/users/me").with(bearer(token)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("This account is disabled"));
+                .andExpect(jsonPath("$.message").value("This account is disabled"))
+                .andExpect(jsonPath("$.code").value("ACCOUNT_DISABLED"));
     }
 
     @Test

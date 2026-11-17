@@ -1,5 +1,6 @@
 package com.moga.khronosdemo.exceptions;
 
+import com.moga.khronosdemo.dtos.response.ErrorCode;
 import com.moga.khronosdemo.dtos.response.ErrorResponseDTO;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -58,7 +59,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(TooManyLoginAttemptsException.class)
     public ResponseEntity<ErrorResponseDTO> handleTooManyLoginAttempts(TooManyLoginAttemptsException ex,
                                                                        HttpServletRequest request) {
-        ResponseEntity<ErrorResponseDTO> response = build(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage(), request, null);
+        ResponseEntity<ErrorResponseDTO> response =
+                build(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage(), ErrorCode.TOO_MANY_ATTEMPTS, request, null);
         return ResponseEntity.status(response.getStatusCode())
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
                 .body(response.getBody());
@@ -109,16 +111,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponseDTO> handleAuthentication(AuthenticationException ex, HttpServletRequest request) {
         String message;
+        ErrorCode code;
         if (ex instanceof DisabledException) {
             message = "This account is disabled";
+            code = ErrorCode.ACCOUNT_DISABLED;
         } else if (ex instanceof OAuth2AuthenticationException || ex instanceof CredentialsExpiredException) {
             message = "Your session has expired or is no longer valid. Sign in again";
+            code = ErrorCode.SESSION_EXPIRED;
         } else if (ex instanceof InsufficientAuthenticationException) {
             message = "Authentication is required to access this resource";
+            code = ErrorCode.AUTHENTICATION_REQUIRED;
         } else {
             message = "Invalid username or password";
+            code = ErrorCode.INVALID_CREDENTIALS;
         }
-        return build(HttpStatus.UNAUTHORIZED, message, request, null);
+        return build(HttpStatus.UNAUTHORIZED, message, code, request, null);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
@@ -150,13 +157,19 @@ public class GlobalExceptionHandler {
 
     private ResponseEntity<ErrorResponseDTO> build(HttpStatus status, String message, HttpServletRequest request,
                                                    Map<String, String> fieldErrors) {
+        return build(status, message, null, request, fieldErrors);
+    }
+
+    private ResponseEntity<ErrorResponseDTO> build(HttpStatus status, String message, ErrorCode code,
+                                                   HttpServletRequest request, Map<String, String> fieldErrors) {
         ErrorResponseDTO body = new ErrorResponseDTO(
                 Instant.now(),
                 status.value(),
                 status.getReasonPhrase(),
                 message,
                 request.getRequestURI(),
-                fieldErrors
+                fieldErrors,
+                code
         );
         return ResponseEntity.status(status).body(body);
     }
