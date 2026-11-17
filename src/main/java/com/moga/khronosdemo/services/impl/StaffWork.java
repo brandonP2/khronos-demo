@@ -85,7 +85,18 @@ final class StaffWork {
 
     // The known actual costs, from the hours worked, added up; null when no worker's cost is known
     BigDecimal actualCost() {
-        return sumKnown(worker -> ratesOf(worker).costOf(tallyOf(worker).workedMinutesByDay()));
+        return sumKnown(this::actualCostOf);
+    }
+
+    /**
+     * The listed workers who worked in the range but whose actual cost is unknown, because they have no
+     * rate for some of the days they worked: {@link #actualCost()} leaves them out. Open entries have no
+     * minutes yet, so a worker who only has one is not counted.
+     */
+    int workersWithoutActualCost() {
+        return (int) listedWorkers().stream()
+                .filter(worker -> tallyOf(worker).workedMinutes() > 0 && actualCostOf(worker) == null)
+                .count();
     }
 
     /**
@@ -120,6 +131,10 @@ final class StaffWork {
             tally.entries().forEach(entry -> days.add(entry.getBusinessDate()));
         });
         return days;
+    }
+
+    private BigDecimal actualCostOf(Worker worker) {
+        return ratesOf(worker).costOf(tallyOf(worker).workedMinutesByDay());
     }
 
     private BigDecimal sumKnown(Function<Worker, BigDecimal> costOf) {

@@ -131,8 +131,10 @@ class BusinessSummaryTests extends IntegrationTest {
                 .andExpect(jsonPath("$.totals.tips").value(20.0))
                 .andExpect(jsonPath("$.totals.expenses").value(2505.5))
                 .andExpect(jsonPath("$.totals.payrollExpenses").value(1500.0))
-                // Ana's 300 + 120 minutes at 10 €/h; Ben has no rate
+                // Ana's 300 + 120 minutes at 10 €/h; Ben has no rate, so his Friday is left out and the cost is partial
                 .andExpect(jsonPath("$.totals.laborCost").value(70.0))
+                .andExpect(jsonPath("$.totals.laborCostPartial").value(true))
+                .andExpect(jsonPath("$.totals.workersWithoutCost").value(1))
                 // Ana's shifts: 300 minutes at 10 €/h, 240 + 180 at 12 €/h
                 .andExpect(jsonPath("$.totals.plannedLaborCost").value(134.0))
                 // 1800 - (2505.50 - 1500) - 70: the cost of the hours replaces the payroll expenses
@@ -188,8 +190,13 @@ class BusinessSummaryTests extends IntegrationTest {
                 .andReturn();
         Object actualCost = JsonPath.read(hours.getResponse().getContentAsString(), "$.totals.actualCost");
         Object plannedCost = JsonPath.read(hours.getResponse().getContentAsString(), "$.totals.plannedCost");
+        Object costPartial = JsonPath.read(hours.getResponse().getContentAsString(), "$.totals.costPartial");
+        Object workersWithoutCost = JsonPath.read(hours.getResponse().getContentAsString(), "$.totals.workersWithoutCost");
         assertEquals(actualCost, JsonPath.read(summary.getResponse().getContentAsString(), "$.totals.laborCost"));
         assertEquals(plannedCost, JsonPath.read(summary.getResponse().getContentAsString(), "$.totals.plannedLaborCost"));
+        assertEquals(costPartial, JsonPath.read(summary.getResponse().getContentAsString(), "$.totals.laborCostPartial"));
+        assertEquals(workersWithoutCost,
+                JsonPath.read(summary.getResponse().getContentAsString(), "$.totals.workersWithoutCost"));
     }
 
     @Test
@@ -206,6 +213,9 @@ class BusinessSummaryTests extends IntegrationTest {
         mockMvc.perform(getJson("/api/reports/establishment/{id}/summary" + RANGE, noRates.getId()).with(as(owner2)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totals.laborCost").value(nullValue()))
+                // An unknown cost is not a partial one, but Carla is still counted as worked without a cost
+                .andExpect(jsonPath("$.totals.laborCostPartial").value(false))
+                .andExpect(jsonPath("$.totals.workersWithoutCost").value(1))
                 .andExpect(jsonPath("$.totals.plannedLaborCost").value(nullValue()))
                 .andExpect(jsonPath("$.totals.laborCostPercent").value(nullValue()))
                 // 250 - 40 - 1000: with no cost from the hours, the payroll expenses are the staff cost
@@ -234,6 +244,8 @@ class BusinessSummaryTests extends IntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totals.sales").value(0.0))
                 .andExpect(jsonPath("$.totals.laborCost").value(36.0))
+                .andExpect(jsonPath("$.totals.laborCostPartial").value(false))
+                .andExpect(jsonPath("$.totals.workersWithoutCost").value(0))
                 .andExpect(jsonPath("$.totals.laborCostPercent").value(nullValue()))
                 .andExpect(jsonPath("$.totals.grossMargin").value(-36.0))
                 .andExpect(jsonPath("$.totals.cashDifference").value(0.0))

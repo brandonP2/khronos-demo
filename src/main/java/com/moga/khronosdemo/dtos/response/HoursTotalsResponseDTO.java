@@ -8,6 +8,10 @@ public record HoursTotalsResponseDTO(
         long workedMinutes,
         long differenceMinutes,
         BigDecimal plannedCost,
-        BigDecimal actualCost
+        BigDecimal actualCost,
+        // True when actualCost is known but leaves out a worker who worked in the range with an unknown cost
+        boolean costPartial,
+        // The workers who worked in the range and whose actual cost is unknown (a day without a rate)
+        int workersWithoutCost
 ) {
 }

@@ -23,6 +23,7 @@ import com.moga.khronosdemo.services.ReportService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -196,10 +197,14 @@ public class ReportServiceImpl implements ReportService {
                 rates.costOf(tally.workedMinutesByDay()));
     }
 
-    // Costs add up the workers' known costs, as the business summary's staff cost does; null when none is known
+    // Costs add up the workers' known costs, as the business summary's staff cost does; null when none is known.
+    // costPartial says that a known actual cost leaves out someone who worked.
     private static HoursTotalsResponseDTO totals(List<WorkerHoursResponseDTO> rows, StaffWork staff) {
         long planned = rows.stream().mapToLong(WorkerHoursResponseDTO::plannedMinutes).sum();
         long worked = rows.stream().mapToLong(WorkerHoursResponseDTO::workedMinutes).sum();
-        return new HoursTotalsResponseDTO(planned, worked, worked - planned, staff.plannedCost(), staff.actualCost());
+        BigDecimal actualCost = staff.actualCost();
+        int workersWithoutCost = staff.workersWithoutActualCost();
+        return new HoursTotalsResponseDTO(planned, worked, worked - planned, staff.plannedCost(), actualCost,
+                actualCost != null && workersWithoutCost > 0, workersWithoutCost);
     }
 }

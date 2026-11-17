@@ -75,6 +75,7 @@ final class BusinessPeriod {
     SummaryTotalsResponseDTO totals() {
         BigDecimal sales = sales();
         BigDecimal laborCost = staff.actualCost();
+        int workersWithoutCost = staff.workersWithoutActualCost();
         long closed = closings.values().stream().filter(CashClosing::isClosed).count();
         Set<LocalDate> activeDays = staff.activeDays();
         long missing = from.datesUntil(to.plusDays(1)).filter(day -> isMissing(day, activeDays)).count();
@@ -87,6 +88,8 @@ final class BusinessPeriod {
                 sum(expenses),
                 sum(payroll(expenses)),
                 laborCost,
+                laborCost != null && workersWithoutCost > 0,
+                workersWithoutCost,
                 staff.plannedCost(),
                 margin(sales, expenses, laborCost),
                 laborCostSource(laborCost),

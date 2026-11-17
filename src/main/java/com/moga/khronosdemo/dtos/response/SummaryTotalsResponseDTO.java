@@ -17,6 +17,10 @@ public record SummaryTotalsResponseDTO(
         BigDecimal payrollExpenses,
         // Hours worked times the rate in force each day, as in the hours report; null when no worker's cost is known
         BigDecimal laborCost,
+        // True when laborCost is known but leaves out a worker who worked in the range with an unknown cost
+        boolean laborCostPartial,
+        // The workers who worked in the range and whose cost is unknown (a day without a rate), left out of laborCost
+        int workersWithoutCost,
         // Hours of the shifts times the rate; null when no worker's cost is known
         BigDecimal plannedLaborCost,
         // sales - (expenses - payrollExpenses) - the staff cost: laborCost, or payrollExpenses when laborCost is

@@ -155,7 +155,10 @@ class ReportTests extends IntegrationTest {
                 .andExpect(jsonPath("$.totals.workedMinutes").value(865))
                 .andExpect(jsonPath("$.totals.differenceMinutes").value(-575))
                 .andExpect(jsonPath("$.totals.plannedCost").value(202.0))
-                .andExpect(jsonPath("$.totals.actualCost").value(99.0));
+                // Ben worked 295 minutes without a rate: the known 99.00 leaves him out
+                .andExpect(jsonPath("$.totals.actualCost").value(99.0))
+                .andExpect(jsonPath("$.totals.costPartial").value(true))
+                .andExpect(jsonPath("$.totals.workersWithoutCost").value(1));
     }
 
     @Test
@@ -263,13 +266,19 @@ class ReportTests extends IntegrationTest {
                 .andExpect(jsonPath("$.workers[1].currentHourlyRate").value(11.0))
                 // Friday's 300 planned and 295 worked minutes have no rate
                 .andExpect(jsonPath("$.workers[1].plannedCost").value(nullValue()))
-                .andExpect(jsonPath("$.workers[1].actualCost").value(nullValue()));
+                .andExpect(jsonPath("$.workers[1].actualCost").value(nullValue()))
+                // so the total leaves him out and says so
+                .andExpect(jsonPath("$.totals.actualCost").value(99.0))
+                .andExpect(jsonPath("$.totals.costPartial").value(true))
+                .andExpect(jsonPath("$.totals.workersWithoutCost").value(1));
 
         // From Saturday on Ben only has the open entry, which has no minutes yet
         mockMvc.perform(getJson("/api/reports/establishment/{id}/hours?from=2030-05-11&to=2030-05-13", venue.getId())
                         .with(as(owner)))
                 .andExpect(jsonPath("$.workers[1].plannedCost").value(0.0))
-                .andExpect(jsonPath("$.workers[1].actualCost").value(0.0));
+                .andExpect(jsonPath("$.workers[1].actualCost").value(0.0))
+                .andExpect(jsonPath("$.totals.costPartial").value(false))
+                .andExpect(jsonPath("$.totals.workersWithoutCost").value(0));
     }
 
     @Test
