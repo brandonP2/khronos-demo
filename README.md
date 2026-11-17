@@ -418,7 +418,7 @@ Quantities are in the product's unit, zero or more unless said otherwise, with u
 
 `{ "establishmentId": 1, "name": "Mahou", "phone": "910 000 000", "email": "pedidos@mahou.test", "notes": null }`
 
-`name` 1 to 100 characters, `phone` at most 30, `email` a valid address, `notes` at most 500. A name is unique within its establishment whatever its case: **409** `A supplier named 'MAHOU' already exists at this establishment` (code `SUPPLIER_NAME_TAKEN`), backed by a unique index on `lower(name)`. The listing is by name. `establishmentId` is only read on creation. Deleting a supplier clears it from the products that had it as their usual supplier; a supplier with purchase orders can't be deleted: **409** `Cannot delete a supplier that has purchase orders` (`SUPPLIER_HAS_ORDERS`).
+`name` 1 to 100 characters, `phone` at most 30, `email` a valid address, `notes` at most 500. A name is unique within its establishment whatever its case: **409** `A supplier named 'MAHOU' already exists at this establishment` (code `SUPPLIER_NAME_TAKEN`), backed by a unique index on `lower(name)`. The listing is by name. `establishmentId` is only read on creation. Deleting a supplier clears it from the products that had it as their usual supplier; a supplier with purchase orders can't be deleted: **409** `Cannot delete a supplier that has purchase orders` (`SUPPLIER_HAS_ORDERS`), also when the order is being created at the same moment as the delete.
 
 ### Products
 
@@ -516,7 +516,7 @@ In one transaction it:
 
 The expense's `purchaseOrderId` is the order's id. It can't be edited (**409** `EXPENSE_FROM_PURCHASE_ORDER`, see [Expenses](#expenses)), so its amount stays the order's total. Deleting it (`DELETE /api/expenses/{id}`) is allowed, with the closed-day rule of any cash expense: the order stays received with its movements and its `expenseId` becomes null, and a corrected expense can then be entered by hand.
 
-**Lock order.** Requests take the row locks they need in one order, leaving out those they don't need, so no two requests can wait for each other: first the establishment, then a purchase order, then products in id order. Receiving takes all three, because its expense needs the establishment's lock, which cash closings and expenses also take; editing and ordering take the order and then its products, cancelling and deleting only the order; movements, counts and changes to a product only products; deleting an expense takes the establishment and then, through the foreign key that clears `expenseId`, the order.
+**Lock order.** Requests take the row locks they need in one order, leaving out those they don't need, so no two requests can wait for each other: first the establishment, then a purchase order, then products in id order. Receiving takes all three, because its expense needs the establishment's lock, which cash closings and expenses also take; editing and ordering take the order and then its products, cancelling and deleting only the order; movements, counts and changes to a product only products; deleting an expense takes the establishment and then, through the foreign key that clears `expenseId`, the order; deleting an establishment takes the establishment and then all its products, and deleting a supplier the products it supplies, before they check for movements and orders.
 
 ### Inventory report and CSV exports
 
@@ -554,7 +554,7 @@ Stock movements and purchase orders (any status) are the establishment's invento
 | `DELETE /api/establishments/{id}` | `Cannot delete an establishment that has stock movements or purchase orders; keep it to keep its inventory records` |
 | `DELETE /api/users/{id}` of an owner | `Cannot delete an owner whose establishments have stock movements or purchase orders; keep the owner to keep those inventory records` |
 
-The database refuses these deletes as well, and deleting a product with movements or order lines, a supplier with orders or an order with movements (`ON DELETE RESTRICT`). Without them, an establishment's products and suppliers go with it. Deleting the account that recorded a movement or created an order keeps that person's name and only clears the link.
+The database refuses these deletes as well, and deleting a product with movements or order lines, a supplier with orders or an order with movements (`ON DELETE RESTRICT`). A movement, count or order being recorded while an establishment or supplier is deleted doesn't turn into an error of its own: the delete waits for it and answers the 409 above (or `SUPPLIER_HAS_ORDERS`), or the other request waits for the delete and then finds nothing to record against (**404**, or the generic **409** `The operation conflicts with existing data`). Without them, an establishment's products and suppliers go with it. Deleting the account that recorded a movement or created an order keeps that person's name and only clears the link.
 
 ### Inventory endpoints
 

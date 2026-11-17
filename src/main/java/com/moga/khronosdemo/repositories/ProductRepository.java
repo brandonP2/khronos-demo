@@ -42,6 +42,18 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("select p from Product p where p.id in :ids order by p.id")
     List<Product> lockAllById(@Param("ids") Collection<Long> ids);
 
+    // Every product of the establishment, locked in id order as above. Deleting the establishment takes
+    // them, after the establishment's own lock, before it checks for movements and orders
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Product p where p.establishment.id = :establishmentId order by p.id")
+    List<Product> lockByEstablishment(@Param("establishmentId") Long establishmentId);
+
+    // The products whose usual supplier this is, locked in id order as above. Deleting the supplier clears
+    // it from them, so it takes them before it checks for orders
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Product p where p.supplier.id = :supplierId order by p.id")
+    List<Product> lockBySupplier(@Param("supplierId") Long supplierId);
+
     @Query("select p.establishment.id from Product p where p.id = :id")
     Optional<Long> findEstablishmentIdById(@Param("id") Long id);
 

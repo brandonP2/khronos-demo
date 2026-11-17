@@ -48,7 +48,9 @@ import java.util.stream.Collectors;
  * </ol>
  * Receiving an order therefore goes establishment, order, products, then creates its expense under the
  * establishment lock it already holds. Deleting an expense locks the establishment and then, through the
- * foreign key that clears purchase_orders.expense_id, the order row: the same order.
+ * foreign key that clears purchase_orders.expense_id, the order row: the same order. Deleting an
+ * establishment locks it and then all its products before it checks for movements and orders; deleting a
+ * supplier locks the products it supplies, then deletes its own row.
  * <p>
  * Range. A request's quantities are validated to fit the quantity column, but a count's difference and
  * the stock a movement leaves are only worked out here: before recording anything, callers check them

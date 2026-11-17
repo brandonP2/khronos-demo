@@ -50,6 +50,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Receiving an order takes the establishment's lock, then the order's, then its products', the same
  * order every other request uses: two receipts of one order take turns, a cash expense can't slip into
  * a day while it is being closed, and a receipt, a movement and a cash closing sent together all finish.
+ * Deleting a supplier or an establishment while an order or a movement that keeps it is being recorded
+ * waits for it and then answers the delete's own 409.
  */
 class PurchaseOrderLockingTests extends IntegrationTest {
 
@@ -69,6 +71,9 @@ class PurchaseOrderLockingTests extends IntegrationTest {
 
     @Autowired
     private CashClosingService cashClosingService;
+
+    @Autowired
+    private EstablishmentService establishmentService;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -173,6 +178,46 @@ class PurchaseOrderLockingTests extends IntegrationTest {
         close.get(10, TimeUnit.SECONDS);
         // The receipt started from the stock the movement left
         assertEquals(new BigDecimal("1.000"), productService.findById(beer).currentStock());
+    }
+
+    @Test
+    void deletingASupplierWhileAnOrderToItIsBeingCreatedAnswersItsConflict() throws Exception {
+        Long makro = supplierService.create(new SupplierRequestDTO(venue.getId(), "Makro", null, null, null)).id();
+        // An order to Makro is saved but not committed yet
+        holdOpen(() -> purchaseOrderService.create(new PurchaseOrderRequestDTO(venue.getId(), makro, null, null,
+                List.of(new PurchaseOrderLineRequestDTO(beer, BigDecimal.ONE, null))), owner.getId()));
+
+        // The delete doesn't see the order, gets past its check and waits for the order's transaction
+        Future<?> delete = pool.submit(() -> supplierService.delete(makro));
+        assertWaits(delete);
+
+        releaseFirst.countDown();
+        ExecutionException failure = assertThrows(ExecutionException.class, () -> delete.get(10, TimeUnit.SECONDS));
+        BusinessRuleException refused = assertInstanceOf(BusinessRuleException.class, failure.getCause());
+        assertEquals("Cannot delete a supplier that has purchase orders", refused.getMessage());
+        assertEquals(ErrorCode.SUPPLIER_HAS_ORDERS, refused.getCode());
+        assertTrue(supplierRepository.existsById(makro));
+    }
+
+    @Test
+    void deletingAnEstablishmentWhileAMovementIsBeingRecordedAnswersItsConflict() throws Exception {
+        Establishment other = createEstablishment(owner);
+        Long rum = productService.create(new ProductRequestDTO(other.getId(), "Ron", ProductCategory.SPIRITS,
+                ProductUnit.BOTTLE, null, null, null)).id();
+        // A movement of its rum is recorded but not committed yet
+        holdOpen(() -> stockMovementService.create(new StockMovementRequestDTO(rum, StockMovementType.PURCHASE,
+                BigDecimal.ONE, null, null, null), owner.getId()));
+
+        Future<?> delete = pool.submit(() -> establishmentService.delete(other.getId()));
+        assertWaits(delete);
+
+        releaseFirst.countDown();
+        ExecutionException failure = assertThrows(ExecutionException.class, () -> delete.get(10, TimeUnit.SECONDS));
+        BusinessRuleException refused = assertInstanceOf(BusinessRuleException.class, failure.getCause());
+        assertEquals("Cannot delete an establishment that has stock movements or purchase orders; keep it to keep"
+                + " its inventory records", refused.getMessage());
+        assertTrue(establishmentRepository.existsById(other.getId()));
+        assertEquals(1, stockMovementRepository.count());
     }
 
     // Runs the work in a transaction on another thread and keeps that transaction open until releaseFirst
