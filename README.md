@@ -8,6 +8,8 @@ Besides what was planned, Khronos records what actually happened: workers clock 
 
 It also keeps the day-to-day money, entered by hand: the daily cash closing (takings by payment method, cash counted against cash expected), the expenses, and a summary of sales, expenses, staff cost and estimated margin per day, compared with the period before.
 
+And it keeps the inventory of drinks and supplies: suppliers, products, a stock ledger that is only ever added to (purchases, waste, consumption, adjustments and physical counts), orders to suppliers that are received into stock and can create the expense, and an inventory report with CSV exports.
+
 ## Tech stack
 
 | | |
@@ -44,16 +46,21 @@ It also keeps the day-to-day money, entered by hand: the daily cash closing (tak
 | **CashClosing** | The cash closing of one business day at an establishment: takings by payment method, float, cash taken out, cash counted, and the figures worked out from them. A draft until it is closed. |
 | **CashClosingChange** | One row of a cash closing's history: who did what, when, why, and the amounts and figures it left. Rows are never changed. |
 | **Expense** | Money an establishment spent: business day, category, description, supplier, amount and payment method. |
+| **Supplier** | Someone an establishment buys stock from: a name, unique within the establishment, and an optional phone, email and notes. |
+| **Product** | Something an establishment keeps in stock: a name, unique within the establishment, a category, the unit it is counted in, an optional minimum, the last known unit cost and an optional usual supplier. It has no stock field: its stock is the sum of its movements. |
+| **StockMovement** | One line of a product's stock ledger: type, signed quantity, unit cost, reason, business day, the stock right after it and who recorded it. Rows are never changed or deleted. |
+| **PurchaseOrder** | An order of products to one supplier, from draft to received or cancelled, with the expense created when it was received. |
+| **PurchaseOrderLine** | One product of an order: quantity ordered, unit cost and quantity received. |
 
-Deleting a parent also deletes everything under it. For example, deleting an establishment removes its zones, workers, shifts and events. Time entries, cash closings and expenses are the exception: nothing that has them can be deleted, and deleting a shift keeps time entries. See [What deleting does to time entries](#what-deleting-does-to-time-entries) and [Deleting and cash records](#deleting-and-cash-records).
+Deleting a parent also deletes everything under it. For example, deleting an establishment removes its zones, workers, shifts and events, and the products and suppliers that have no movements or orders. Time entries, cash closings, expenses, stock movements and purchase orders are the exception: nothing that has them can be deleted, and deleting a shift keeps time entries. See [What deleting does to time entries](#what-deleting-does-to-time-entries), [Deleting and cash records](#deleting-and-cash-records) and [Deleting and inventory records](#deleting-and-inventory-records).
 
 ## Roles and permissions
 
 | Role | What they can do |
 |---|---|
 | `PLATFORM_ADMIN` | Everything. This is the only role that creates users of any role and creates or deletes establishments. |
-| `OWNER` | Manages their own establishments: edits them and manages their zones, workers, shifts, events and assignments. They can create users with the `WORKER` role, link to their establishments only the accounts they created, and reset their workers' passwords. They enter, clock out, correct and void their workers' time entries, set their hourly rates and read the reports and CSV exports of their establishments. They also keep their establishments' cash closings and expenses and read the business summary. |
-| `WORKER` | Can read their own profile, shifts and event assignments, and see the zones and events of the establishment they work at and who is assigned to each event. Listing the establishment's assignments gives them only their own. They see who the owner is but not the owner's email or phone. They can change their own password. They clock themselves in and out, and read their own time entries, their history, their daily report and its CSV. They never see hourly rates or costs, not even their own, nor anything about cash closings, expenses or the business summary (**403**). |
+| `OWNER` | Manages their own establishments: edits them and manages their zones, workers, shifts, events and assignments. They can create users with the `WORKER` role, link to their establishments only the accounts they created, and reset their workers' passwords. They enter, clock out, correct and void their workers' time entries, set their hourly rates and read the reports and CSV exports of their establishments. They also keep their establishments' cash closings and expenses and read the business summary, and keep their inventory: suppliers, products, stock movements, counts, purchase orders and the inventory report. |
+| `WORKER` | Can read their own profile, shifts and event assignments, and see the zones and events of the establishment they work at and who is assigned to each event. Listing the establishment's assignments gives them only their own. They see who the owner is but not the owner's email or phone. They can change their own password. They clock themselves in and out, and read their own time entries, their history, their daily report and its CSV. They never see hourly rates or costs, not even their own, nor anything about cash closings, expenses, the business summary or the inventory (**403**). |
 
 Each endpoint checks access with `@PreAuthorize` rules backed by `AccessGuard`. A request for data that belongs to another owner returns **403**.
 
@@ -117,7 +124,7 @@ These rules are enforced in the service layer. Breaking one returns **409 Confli
 - Two establishments can't share an address.
 - An establishment's owner must have the `OWNER` role.
 - A zone can't be moved to another establishment.
-- An establishment with time entries, cash closings or expenses can't be deleted.
+- An establishment with time entries, cash closings, expenses, stock movements or purchase orders can't be deleted.
 
 **Workers**
 - Only users with the `WORKER` role can be registered as workers, and each user only once.
@@ -399,6 +406,205 @@ A closing looks like this:
 |---|---|---|
 | Largest difference, in euros either way, a day can be closed with without a reason | `CASH_DIFFERENCE_THRESHOLD` | `5.00` |
 
+## Inventory
+
+Khronos keeps the stock of a bar's drinks and supplies, entered by hand. **There is no automatic stock deduction from sales**: Khronos is not connected to a point-of-sale system, so what is sold or used is entered as consumption, or shows up in the next physical count. There are no recipes, no conversions between units, no batches or expiry dates, one store per establishment and no transfers between establishments.
+
+Quantities are in the product's unit, zero or more unless said otherwise, with up to three decimals, so half a bottle can be counted: they are stored as `numeric(12,3)`, computed as `BigDecimal` and always returned with three decimals (`2.500`). Money is as in the [cash section](#cash-expenses-and-the-business-summary): euros, at most two decimals in requests, always two in responses. A value is a quantity times a unit cost, rounded half up to cents.
+
+### Suppliers
+
+`{ "establishmentId": 1, "name": "Mahou", "phone": "910 000 000", "email": "pedidos@mahou.test", "notes": null }`
+
+`name` 1 to 100 characters, `phone` at most 30, `email` a valid address, `notes` at most 500. A name is unique within its establishment whatever its case: **409** `A supplier named 'MAHOU' already exists at this establishment` (code `SUPPLIER_NAME_TAKEN`), backed by a unique index on `lower(name)`. The listing is by name. `establishmentId` is only read on creation. Deleting a supplier clears it from the products that had it as their usual supplier; a supplier with purchase orders can't be deleted: **409** `Cannot delete a supplier that has purchase orders` (`SUPPLIER_HAS_ORDERS`).
+
+### Products
+
+`{ "establishmentId": 1, "name": "Ron Barceló", "category": "SPIRITS", "unit": "BOTTLE", "minStock": 2, "unitCost": 11.50, "supplierId": 3 }`
+
+- `category`: `SPIRITS`, `BEER`, `WINE`, `SOFT_DRINKS` (soft drinks and water), `COFFEE`, `FOOD`, `SUPPLIES` (napkins, ice, cleaning), `OTHER`.
+- `unit`, how the product is counted: `BOTTLE`, `UNIT`, `KG`, `L`, `BOX`, `KEG`. It can't change once the product has movements: **409** `The unit of a product with stock movements cannot be changed` (`PRODUCT_UNIT_LOCKED`).
+- `name` 1 to 100 characters, unique within the establishment whatever its case (**409** `PRODUCT_NAME_TAKEN`). `minStock` and `unitCost` are optional, zero or more. `supplierId` must be a supplier of the same establishment (**409** `The supplier belongs to another establishment`, `OTHER_ESTABLISHMENT`).
+
+A product has no stock field. The response works out:
+
+| Field | How |
+|---|---|
+| `currentStock` | The sum of all its movements |
+| `stockValue` | `currentStock × unitCost`; null without a cost, `0.00` when the stock is 0 or less |
+| `isLowStock` | `minStock` is set and `currentStock <= minStock` |
+
+`PUT /{id}/active` with `{ "active": false }` deactivates a product: it keeps its history but takes no new movements, counts or order lines (**409** `Product 'Ron Barceló' is inactive; activate it first`, `PRODUCT_INACTIVE`), and listings leave it out unless `includeInactive=true`. A product can only be deleted while nothing was recorded or ordered for it; otherwise **409** `Cannot delete a product that has stock movements or purchase order lines; deactivate it instead (PUT /api/products/{id}/active) to keep its history` (`PRODUCT_HAS_HISTORY`). Listings are by category, in the order above, then by name.
+
+**How the stock is worked out.** The stock is never stored: every listing adds up the movements of all the establishment's products in one grouped query, so it runs the same two queries however many products and movements there are. Keeping a running total on the product row would save that sum, but it would be a second copy of the truth that has to be kept right on every path; with the ledger as the only source, there is nothing to drift. If the sums ever became slow, a total maintained in the same transaction and under the same lock as each movement would be the next step.
+
+### Stock movements, and why they are never edited
+
+`POST /api/stock-movements` with `{ "productId": 5, "type": "WASTE", "quantity": 1.5, "unitCost": null, "reason": "Se cayó una botella", "date": "2026-11-20" }`.
+
+| `type` | What it is | `quantity` sent | Stored as |
+|---|---|---|---|
+| `PURCHASE` | Stock in, bought | more than 0 | positive |
+| `WASTE` | Breakage, out of date, given away, stolen | more than 0 | negative |
+| `CONSUMPTION` | Used or sold, entered by hand | more than 0 | negative |
+| `ADJUSTMENT` | A manual correction | signed, not 0 | as sent |
+| `COUNT` | The difference a physical count found | only recorded by a [count](#stock-counts) | the difference |
+
+- `reason` is required, 3 to 255 characters, for `WASTE` and `ADJUSTMENT`, and optional (at most 255) otherwise.
+- `unitCost` can only be sent with a `PURCHASE`, and then becomes the product's cost. Each movement keeps the cost it is valued at: the purchase's, or the product's at that moment (null if it has none). `value` is `|quantity| × unitCost`.
+- `date` is the business day; it defaults to today in the establishment's time zone and can't be later (**409** `The movement date cannot be in the future`).
+- The stock may go below zero; that happens when a purchase wasn't entered, and isn't an error.
+- `stockAfter` is the product's stock right after the movement was recorded.
+
+These rules answer **400** with `fieldErrors`: `type` (`COUNT is only recorded by a stock count (POST /api/stock-counts)`), `quantity` (`must be greater than 0`, `must not be 0`), `reason` (`must not be blank for WASTE and ADJUSTMENT`, `size must be between 3 and 255`) and `unitCost` (`can only be sent with a PURCHASE`).
+
+The ledger is the record of what happened, so **a movement is never edited or deleted**: there is no `PUT` or `DELETE`, and a mistake is corrected with a new movement (an `ADJUSTMENT`, or a count). A database trigger rejects updates and deletes of `stock_movements`; the only change it allows is the database clearing the author's link when their account is deleted, and the movement keeps their name.
+
+Movements of the same product take turns: each one is recorded while its product's row is locked, and its `stockAfter` is the stock read under that lock plus its quantity, so two movements sent at once never start from the same stock. Changing a product's unit, deactivating it and deleting it take the same lock.
+
+The listing (`GET /api/stock-movements/establishment/{id}?from&to&productId&type`) is newest business day first, then the latest recorded; every filter is optional and `from`/`to` apply to `date`. A movement entered for an earlier day shows the stock as it was when it was recorded.
+
+### Stock counts
+
+`POST /api/stock-counts` with what was found on the shelves:
+
+```json
+{ "establishmentId": 1, "date": null, "notes": "Recuento de fin de mes",
+  "items": [ { "productId": 5, "countedQuantity": 8.5 }, { "productId": 6, "countedQuantity": 0 } ] }
+```
+
+For each product it records a `COUNT` movement with `countedQuantity - currentStock`, also when that is 0, to leave on record that the product was counted, so the stock becomes what was counted. `notes` (at most 255 characters) becomes each movement's `reason`. The answer, **201**, is the movements in the order of the items. It takes 1 to 500 items, each product once (**400** `fieldErrors.items`: `must not contain the same product twice`), every product of that establishment (**409** `Product 'Ron' belongs to another establishment`, `OTHER_ESTABLISHMENT`) and active (**409** `PRODUCT_INACTIVE`). The day works as for movements (**409** `The count date cannot be in the future`). It is all or nothing, in one transaction that locks the products in id order: a movement sent at the same time is either counted against or waits for the count.
+
+### Purchase orders and receiving
+
+```json
+{ "establishmentId": 1, "supplierId": 3, "expectedDate": "2026-11-24", "notes": null,
+  "lines": [ { "productId": 5, "quantity": 2, "unitCost": 92.50 }, { "productId": 7, "quantity": 12, "unitCost": null } ] }
+```
+
+An order has 1 to 200 lines, each product once (**400** `fieldErrors.lines`), all of the order's establishment and active, and a supplier of the same establishment. It moves through these statuses:
+
+| Request | From | To |
+|---|---|---|
+| `POST /api/purchase-orders` | | `DRAFT` |
+| `PUT /api/purchase-orders/{id}` (replaces supplier, dates, notes and lines) | `DRAFT` | `DRAFT` |
+| `DELETE /api/purchase-orders/{id}` | `DRAFT` | deleted |
+| `PUT /api/purchase-orders/{id}/order` (`orderDate` = today; its products must still be active) | `DRAFT` | `ORDERED` |
+| `PUT /api/purchase-orders/{id}/cancel` | `DRAFT`, `ORDERED` | `CANCELLED` |
+| `PUT /api/purchase-orders/{id}/receive` | `ORDERED` | `RECEIVED` |
+
+Any other move answers **409** with code `PURCHASE_ORDER_WRONG_STATUS` and a message that names the status, for example `Only a draft purchase order can be edited; this one is ORDERED` (also `... can be deleted`, `... can be ordered`, `Only a draft or ordered purchase order can be cancelled; ...` and `Only an ordered purchase order can be received; ...`).
+
+Each line's `lineTotal` is its quantity times its `unitCost`, the quantity received once the order is received and the one ordered before; null without a cost. The order's `total` adds up the lines that have one, and is null when none has.
+
+Receiving takes every line of the order, each once:
+
+```json
+{ "receivedDate": null, "createExpense": true, "paymentMethod": "CARD",
+  "lines": [ { "lineId": 21, "receivedQuantity": 2, "unitCost": 95.00 }, { "lineId": 22, "receivedQuantity": 0 } ] }
+```
+
+In one transaction it:
+
+1. records a `PURCHASE` movement, with the order's `purchaseOrderId`, for each line with `receivedQuantity > 0`, valued at the line's cost (the one received if sent, else the one ordered), or at the product's cost when the line has none;
+2. makes each cost received the product's `unitCost`;
+3. if `createExpense` is true, creates an [expense](#expenses): category `SUPPLIES`, `date` = the day received, `supplier` = the supplier's name, `description` = `Pedido #<id>`, `amount` = the order's total, and the `paymentMethod` sent.
+
+`receivedDate` defaults to today in the establishment's time zone and can't be later (**409** `The received date cannot be in the future`). A line can be received as 0 (it didn't come), but not all of them (**409** `Nothing was received; cancel the purchase order instead`, `PURCHASE_ORDER_NOTHING_RECEIVED`). A missing line or one of another order answers **400** (`Every line of the purchase order must be sent; line 22 is missing`, `Line 99 is not a line of this purchase order`). With `createExpense` true, `paymentMethod` is required (**400** `fieldErrors.paymentMethod`), and a total that is null or 0 answers **409** `The received purchase order has no total to record as an expense; give its lines a unit cost or receive it without an expense` (`PURCHASE_ORDER_NO_TOTAL`). The expense goes through the same rules as one entered by hand: a cash expense on a day whose cash closing is closed answers that **409** (`The cash closing of 2026-11-20 is closed; ...`), and **nothing at all is received**.
+
+Deleting that expense later (`DELETE /api/expenses/{id}`) keeps the order received with its movements; its `expenseId` becomes null. Editing the expense doesn't change the order.
+
+**Lock order.** Requests take the row locks they need in one order, leaving out those they don't need, so no two requests can wait for each other: first the establishment, then a purchase order, then products in id order. Receiving takes all three, because its expense needs the establishment's lock, which cash closings and expenses also take; editing and ordering take the order and then its products, cancelling and deleting only the order; movements, counts and changes to a product only products; deleting an expense takes the establishment and then, through the foreign key that clears `expenseId`, the order.
+
+### Inventory report and CSV exports
+
+`GET /api/reports/establishment/{id}/inventory?from&to` (both required, at most 366 days):
+
+```json
+{
+  "from": "2026-11-01", "to": "2026-11-30", "currency": "EUR",
+  "stockValue": 1240.50, "productsCount": 42, "lowStockCount": 3, "negativeStockCount": 1,
+  "purchasesValue": 2310.00, "wasteValue": 64.20, "countDifferenceValue": -18.40,
+  "wasteByProduct": [ { "productId": 5, "productName": "Ron Barceló", "unit": "BOTTLE", "quantity": 2.000, "value": 23.00 } ],
+  "lowStock": [ { "productId": 9, "productName": "Tónica", "unit": "UNIT", "currentStock": 4.000, "minStock": 12.000,
+                  "supplierId": 3, "supplierName": "Schweppes" } ]
+}
+```
+
+- As of now, counting only active products: `stockValue` (the sum of their `stockValue`), `productsCount`, `lowStockCount`, `negativeStockCount`, and `lowStock` by category and then name.
+- For the movements dated in the range, each valued at the cost it kept: `purchasesValue`, `wasteValue` (in positive), `countDifferenceValue` (net; negative when the counts found less than the ledger said) and `wasteByProduct`, the ten largest wastes by value (a product whose waste had no cost shows `value` null, last). Movements without a cost add nothing.
+
+The report runs the same four queries whatever the range and the data.
+
+In the same format as the [other exports](#csv-exports) (UTF-8 with a BOM, `;`, CRLF, Spanish headers, `dd/MM/yyyy`, decimal commas, typed text such as product and supplier names, reasons and notes that can't run as a formula). Quantities are written without trailing zeros (`2,5`, `3`):
+
+| Export | File | Columns |
+|---|---|---|
+| `GET /api/reports/establishment/{id}/inventory.csv` | `inventario_{today}.csv` | The stock now, one row per active product, by category and then name: `Producto;Categoría;Unidad;Proveedor;Stock actual;Stock mínimo;Bajo mínimo;Coste unitario (EUR);Valor del stock (EUR)`, with the category and unit in Spanish and `Bajo mínimo` as `Sí` or `No`. |
+| `GET /api/reports/establishment/{id}/stock-movements.csv?from&to` | `movimientos-stock_{from}_{to}.csv` | One row per movement of the range, oldest first: `Fecha;Producto;Unidad;Tipo;Cantidad;Coste unitario (EUR);Valor (EUR);Stock después;Motivo;Pedido;Registrado el;Registrado por`. `Tipo` is `Compra`, `Merma`, `Consumo`, `Ajuste` or `Recuento`; `Pedido` is the purchase order's id; `Registrado el` is in the establishment's time zone. |
+
+### Deleting and inventory records
+
+Stock movements and purchase orders (any status) are the establishment's inventory record:
+
+| Request | Message of the 409 |
+|---|---|
+| `DELETE /api/establishments/{id}` | `Cannot delete an establishment that has stock movements or purchase orders; keep it to keep its inventory records` |
+| `DELETE /api/users/{id}` of an owner | `Cannot delete an owner whose establishments have stock movements or purchase orders; keep the owner to keep those inventory records` |
+
+The database refuses these deletes as well, and deleting a product with movements or order lines, a supplier with orders or an order with movements (`ON DELETE RESTRICT`). Without them, an establishment's products and suppliers go with it. Deleting the account that recorded a movement or created an order keeps that person's name and only clears the link.
+
+### Inventory endpoints
+
+All of them are for the establishment's owner or an admin; a worker gets **403**, and so does an owner for another owner's establishment, also when one of its suppliers or products is named in a request body.
+
+| Method and path | Body | Answer |
+|---|---|---|
+| `GET /api/suppliers/establishment/{id}` | | **200** suppliers by name |
+| `POST /api/suppliers` | the supplier | **201** the supplier |
+| `PUT /api/suppliers/{id}` | the supplier | **200** the supplier |
+| `DELETE /api/suppliers/{id}` | | **204** |
+| `GET /api/products/establishment/{id}?includeInactive=false` | | **200** products by category and name |
+| `GET /api/products/{id}` | | **200** the product |
+| `POST /api/products` | the product | **201** the product |
+| `PUT /api/products/{id}` | the product | **200** the product |
+| `PUT /api/products/{id}/active` | `{ "active": false }` | **200** the product |
+| `DELETE /api/products/{id}` | | **204** |
+| `POST /api/stock-movements` | the movement | **201** the movement |
+| `GET /api/stock-movements/establishment/{id}?from&to&productId&type` | | **200** movements, newest first |
+| `POST /api/stock-counts` | the count | **201** the `COUNT` movements |
+| `GET /api/purchase-orders/establishment/{id}?status&from&to` | | **200** orders, newest first; `from` and `to` are days of creation in the establishment's time zone |
+| `GET /api/purchase-orders/{id}` | | **200** the order |
+| `POST /api/purchase-orders` | the order | **201** the order, `DRAFT` |
+| `PUT /api/purchase-orders/{id}` | the order | **200** the order |
+| `DELETE /api/purchase-orders/{id}` | | **204** |
+| `PUT /api/purchase-orders/{id}/order` | | **200** the order, `ORDERED` |
+| `PUT /api/purchase-orders/{id}/cancel` | | **200** the order, `CANCELLED` |
+| `PUT /api/purchase-orders/{id}/receive` | the receipt | **200** the order, `RECEIVED` |
+| `GET /api/reports/establishment/{id}/inventory?from&to` | | **200** the report |
+| `GET /api/reports/establishment/{id}/inventory.csv` | | **200** `text/csv` file |
+| `GET /api/reports/establishment/{id}/stock-movements.csv?from&to` | | **200** `text/csv` file |
+
+A movement and an order look like this:
+
+```json
+{
+  "id": 88, "productId": 5, "productName": "Ron Barceló", "unit": "BOTTLE", "type": "PURCHASE",
+  "quantity": 6.000, "unitCost": 11.50, "value": 69.00, "reason": null, "date": "2026-11-20",
+  "createdAt": "2026-11-20T10:15:00Z", "createdByName": "Lucía Pérez", "purchaseOrderId": 12, "stockAfter": 8.500
+}
+```
+
+```json
+{
+  "id": 12, "establishmentId": 1, "supplierId": 3, "supplierName": "Mahou", "status": "RECEIVED",
+  "orderDate": "2026-11-18", "expectedDate": "2026-11-20", "receivedDate": "2026-11-20", "notes": null,
+  "lines": [ { "id": 21, "productId": 5, "productName": "Ron Barceló", "unit": "BOTTLE", "quantity": 6.000,
+               "unitCost": 11.50, "receivedQuantity": 6.000, "lineTotal": 69.00 } ],
+  "total": 69.00, "expenseId": 40, "createdAt": "2026-11-18T09:00:00Z", "createdByName": "Lucía Pérez"
+}
+```
+
 ## Email notifications
 
 Workers get an email through [Resend](https://resend.com) whenever their schedule changes:
@@ -432,9 +638,14 @@ All endpoints are under `/api` and need a bearer token, except `POST /api/auth/l
 | Worker events | `/api/worker-events` | `POST` takes a **list** of worker/event pairs. You can list assignments by worker, event or establishment. |
 | Time entries | `/api/time-entries` | Workers clock in and out; owners enter, clock out, correct and void entries. See below. |
 | Rates | `/api/workers/{workerId}/rates` | A worker's hourly rates. Owners and admins only. |
-| Reports | `/api/reports` | Hours, lateness and costs, and the business summary, as JSON or CSV. |
+| Reports | `/api/reports` | Hours, lateness and costs, the business summary and the inventory, as JSON or CSV. |
 | Cash closings | `/api/cash-closings` | One per establishment and business day, closed and reopened with a history. Owners and admins only. |
 | Expenses | `/api/expenses` | An establishment's expenses. Owners and admins only. |
+| Suppliers | `/api/suppliers` | An establishment's suppliers. Owners and admins only. |
+| Products | `/api/products` | Products with their stock worked out from the ledger. Owners and admins only. |
+| Stock movements | `/api/stock-movements` | The stock ledger: only `POST` and listings, never edited. Owners and admins only. |
+| Stock counts | `/api/stock-counts` | Physical counts, recorded as `COUNT` movements. Owners and admins only. |
+| Purchase orders | `/api/purchase-orders` | Orders to suppliers, from draft to received. Owners and admins only. |
 | Health | `/actuator/health` | Public. Answers `{"status":"UP"}` without details, or 503 if the database is down. |
 
 **Date filters.** Every listing of shifts (by owner, worker or zone), events (by zone or establishment) and assignments by establishment accepts optional `from` and `to` query parameters, as `YYYY-MM-DD`, both inclusive. Events and assignments are filtered by the event's date. Without them the whole list comes back. For example `GET /api/worker-shifts/owner/3?from=2026-11-01&to=2026-11-30`. `from` after `to` answers **400**.
@@ -538,7 +749,7 @@ Every error comes back in the same shape:
 
 `fieldErrors` only appears on validation errors.
 
-`code` only appears on the errors in the table below: the authentication errors and the cash closing and expense conflicts. It is a stable value for clients to tell these cases apart, while the wording of `message` may change. Clients should treat a missing or unknown `code` like any other error with that status.
+`code` only appears on the errors in the table below: the authentication errors, the cash closing and expense conflicts, and the inventory conflicts. It is a stable value for clients to tell these cases apart, while the wording of `message` may change. Clients should treat a missing or unknown `code` like any other error with that status.
 
 ```json
 {
@@ -566,6 +777,16 @@ Every error comes back in the same shape:
 | `CASH_NOT_COUNTED` | 409 | Closing a day whose `countedCash` is still `null` |
 | `CASH_DAY_CLOSED` | 409 | Adding, changing, moving or deleting a cash expense of a day whose closing is closed; `details.date` is that day |
 | `FUTURE_DATE` | 409 | A cash closing's `businessDate` or an expense's `date` is after today in the establishment's time zone |
+| `SUPPLIER_NAME_TAKEN` | 409 | Another supplier of the establishment has that name, whatever its case |
+| `SUPPLIER_HAS_ORDERS` | 409 | A supplier with purchase orders can't be deleted |
+| `PRODUCT_NAME_TAKEN` | 409 | Another product of the establishment has that name, whatever its case |
+| `PRODUCT_INACTIVE` | 409 | The product is inactive, so it takes no movements, counts or order lines |
+| `PRODUCT_UNIT_LOCKED` | 409 | The unit of a product with movements can't change |
+| `PRODUCT_HAS_HISTORY` | 409 | A product with movements or order lines can't be deleted; deactivate it |
+| `OTHER_ESTABLISHMENT` | 409 | A supplier or product named in the request is of another establishment of the same owner |
+| `PURCHASE_ORDER_WRONG_STATUS` | 409 | The purchase order's status doesn't allow that edit, delete or transition |
+| `PURCHASE_ORDER_NOTHING_RECEIVED` | 409 | Every line of the receipt is 0; cancel the order instead |
+| `PURCHASE_ORDER_NO_TOTAL` | 409 | An expense was asked for but the total received is unknown or 0 |
 
 `details` only comes with `CASH_CLOSING_EXISTS` and `CASH_DAY_CLOSED`, and is left out otherwise. It holds what the error is about as strings, so clients don't have to parse the message; for now that is `date`, the business day as `YYYY-MM-DD`:
 
@@ -618,7 +839,8 @@ Flyway owns the schema. The scripts are in `src/main/resources/db/migration` and
 - `V8` changes the time entries' foreign keys to their worker and establishment, and the history's to its entry, from `ON DELETE CASCADE` to `ON DELETE RESTRICT`. Only the delete action changes, so the existing rows already meet the new constraints.
 - `V9` and `V10` add expenses, and cash closings with their history and its append-only trigger. They only add sequences, tables, indexes, a function and a trigger, so they run on a database that already has data.
 - `V11` lets a draft cash closing be saved before its cash is counted: `counted_cash` becomes nullable in `cash_closings`, and `counted_cash` and `difference` in their history. It only drops `NOT NULL` and adds checks that every existing row already meets (a closed day has counted cash; in the history both are null or neither is), so it runs on a database that already has data.
-- Any schema change goes in a new script, `V12__what_it_does.sql`, `V13__...`. Never edit a script that has already run anywhere.
+- `V12` to `V14` add the inventory: suppliers; products and stock movements with their append-only trigger; purchase orders with their lines, and the link from a movement to its order. They only add sequences, tables, indexes, a function, a trigger and one nullable column, so they run on a database that already has data.
+- Any schema change goes in a new script, `V15__what_it_does.sql`, `V16__...`. Never edit a script that has already run anywhere.
 
 ### Tests
 
@@ -646,7 +868,7 @@ src/main/java/com/moga/khronosdemo
 ├── repositories/  Spring Data JPA repositories, including the overlap and coverage queries
 ├── security/      SecurityConfig, AccessGuard, the user-details service, JWT issuing and checking, login limits
 ├── services/      Service interfaces and their implementations (business rules)
-└── validation/    Custom constraints: batch size, password length in bytes, time zone ids; the OnCreate group
+└── validation/    Custom constraints: batch size, password length in bytes, time zone ids, rules across fields; the OnCreate group
 
 src/main/resources/db/migration   Flyway migrations
 ```
