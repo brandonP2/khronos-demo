@@ -62,6 +62,10 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, Lo
 
     boolean existsByProduct_Id(Long productId);
 
+    boolean existsByEstablishment_Id(Long establishmentId);
+
+    boolean existsByEstablishment_Owner_Id(Long ownerId);
+
     interface ProductTypeTotal {
 
         Long getProductId();

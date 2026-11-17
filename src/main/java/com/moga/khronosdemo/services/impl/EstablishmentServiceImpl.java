@@ -11,6 +11,8 @@ import com.moga.khronosdemo.mappers.EstablishmentMapper;
 import com.moga.khronosdemo.repositories.CashClosingRepository;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.ExpenseRepository;
+import com.moga.khronosdemo.repositories.PurchaseOrderRepository;
+import com.moga.khronosdemo.repositories.StockMovementRepository;
 import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.services.EstablishmentService;
@@ -28,16 +30,22 @@ public class EstablishmentServiceImpl implements EstablishmentService {
     private final TimeEntryRepository timeEntryRepository;
     private final CashClosingRepository cashClosingRepository;
     private final ExpenseRepository expenseRepository;
+    private final StockMovementRepository stockMovementRepository;
+    private final PurchaseOrderRepository purchaseOrderRepository;
     private final EstablishmentMapper establishmentMapper;
 
     public EstablishmentServiceImpl(EstablishmentRepository establishmentRepository, UserRepository userRepository,
                                     TimeEntryRepository timeEntryRepository, CashClosingRepository cashClosingRepository,
-                                    ExpenseRepository expenseRepository, EstablishmentMapper establishmentMapper) {
+                                    ExpenseRepository expenseRepository, StockMovementRepository stockMovementRepository,
+                                    PurchaseOrderRepository purchaseOrderRepository,
+                                    EstablishmentMapper establishmentMapper) {
         this.establishmentRepository = establishmentRepository;
         this.userRepository = userRepository;
         this.timeEntryRepository = timeEntryRepository;
         this.cashClosingRepository = cashClosingRepository;
         this.expenseRepository = expenseRepository;
+        this.stockMovementRepository = stockMovementRepository;
+        this.purchaseOrderRepository = purchaseOrderRepository;
         this.establishmentMapper = establishmentMapper;
     }
 
@@ -84,7 +92,9 @@ public class EstablishmentServiceImpl implements EstablishmentService {
     }
 
     // Deleting an establishment deletes its workers, so it is not allowed while it has time entries. Its cash
-    // closings (drafts too) and expenses are its financial record, so they keep it from being deleted as well
+    // closings (drafts too) and expenses are its financial record, and its stock movements and purchase
+    // orders its inventory record, so they keep it from being deleted as well. Products without movements
+    // and suppliers without orders go with it
     @Override
     public void delete(Long id) {
         Establishment establishment = getEstablishment(id);
@@ -95,6 +105,10 @@ public class EstablishmentServiceImpl implements EstablishmentService {
         if (cashClosingRepository.existsByEstablishment_Id(id) || expenseRepository.existsByEstablishment_Id(id)) {
             throw new BusinessRuleException("Cannot delete an establishment that has cash closings or expenses;"
                     + " keep it to keep its financial records");
+        }
+        if (stockMovementRepository.existsByEstablishment_Id(id) || purchaseOrderRepository.existsByEstablishment_Id(id)) {
+            throw new BusinessRuleException("Cannot delete an establishment that has stock movements or purchase orders;"
+                    + " keep it to keep its inventory records");
         }
         establishmentRepository.delete(establishment);
     }

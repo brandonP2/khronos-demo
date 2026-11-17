@@ -46,5 +46,9 @@ public interface PurchaseOrderRepository extends JpaRepository<PurchaseOrder, Lo
 
     boolean existsBySupplier_Id(Long supplierId);
 
+    boolean existsByEstablishment_Id(Long establishmentId);
+
+    boolean existsByEstablishment_Owner_Id(Long ownerId);
+
     boolean existsByLines_Product_Id(Long productId);
 }
