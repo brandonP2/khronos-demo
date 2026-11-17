@@ -14,8 +14,11 @@ public interface EstablishmentRepository extends JpaRepository<Establishment, Lo
 
     // Locks the establishment's row until the transaction ends. Every change to its cash closings and
     // expenses takes this lock first, so closing a day and adding a cash expense to it take turns. On
-    // PostgreSQL it is FOR NO KEY UPDATE, which doesn't stop other requests from inserting rows that
-    // reference the establishment (shifts, time entries...). Nothing else locks establishments.
+    // PostgreSQL, Hibernate 7.4 renders PESSIMISTIC_WRITE as "for no key update of <alias>" (pinned by
+    // EstablishmentLockTests): it still makes two cash changes wait for each other, but not the inserts
+    // whose foreign key points at the establishment (time entries, zones, workers...), whose check only
+    // takes FOR KEY SHARE. A plain FOR UPDATE would make a clock-in wait while the till is being closed.
+    // Nothing else locks establishments.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from Establishment e where e.id = :id")
     Optional<Establishment> lockById(@Param("id") Long id);

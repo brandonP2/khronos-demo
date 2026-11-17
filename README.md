@@ -279,7 +279,7 @@ Every creation, edit, close and reopen adds a row to the closing's history (`GET
 
 Only a draft that was never closed can be deleted, and its history goes with it. A day that was closed once stays on record: it can be reopened and corrected, not deleted.
 
-Requests on the same establishment's cash take turns: every change to a closing or an expense first locks the establishment's row. Two closings sent at once for the same day can't both be saved (the second one gets the 409 above), and a cash expense can't slip into a day while it is being closed. The unique constraint on establishment and business day backs this up in the database, and its violation answers the same 409.
+Requests on the same establishment's cash take turns: every change to a closing or an expense first locks the establishment's row. Two closings sent at once for the same day can't both be saved (the second one gets the 409 above), and a cash expense can't slip into a day while it is being closed. The unique constraint on establishment and business day backs this up in the database, and its violation answers the same 409. The row lock is PostgreSQL's `FOR NO KEY UPDATE`, so it doesn't hold up a clock-in or anything else that only inserts rows pointing at the establishment.
 
 ### Expenses
 
