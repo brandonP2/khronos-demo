@@ -36,17 +36,20 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
     private final WorkerShiftMapper workerShiftMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final EventAssignmentReconciler assignmentReconciler;
+    private final TimeEntryShiftLinker timeEntryShiftLinker;
 
     public WorkerShiftServiceImpl(WorkerShiftRepository workerShiftRepository, WorkerRepository workerRepository,
                                   ZoneRepository zoneRepository, WorkerShiftMapper workerShiftMapper,
                                   ApplicationEventPublisher eventPublisher,
-                                  EventAssignmentReconciler assignmentReconciler) {
+                                  EventAssignmentReconciler assignmentReconciler,
+                                  TimeEntryShiftLinker timeEntryShiftLinker) {
         this.workerShiftRepository = workerShiftRepository;
         this.workerRepository = workerRepository;
         this.zoneRepository = zoneRepository;
         this.workerShiftMapper = workerShiftMapper;
         this.eventPublisher = eventPublisher;
         this.assignmentReconciler = assignmentReconciler;
+        this.timeEntryShiftLinker = timeEntryShiftLinker;
     }
 
     @Override
@@ -132,6 +135,7 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
         ShiftDetails before = ShiftDetails.of(workerShift);
 
         workerShiftMapper.updateEntity(workerShift, request, worker, zone);
+        timeEntryShiftLinker.relinkAfterShiftChange(workerShift);
 
         ShiftDetails after = ShiftDetails.of(workerShift);
 
@@ -148,6 +152,7 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
 
     }
 
+    // Time entries matched to the shift are kept; the database clears their link (shift_id)
     @Override
     public void delete(Long id) {
         WorkerShift workerShift = getWorkerShift(id);

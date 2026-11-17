@@ -3,14 +3,18 @@ package com.moga.khronosdemo.support;
 import com.jayway.jsonpath.JsonPath;
 import com.moga.khronosdemo.entities.Establishment;
 import com.moga.khronosdemo.entities.Event;
+import com.moga.khronosdemo.entities.TimeEntry;
 import com.moga.khronosdemo.entities.User;
 import com.moga.khronosdemo.entities.Worker;
 import com.moga.khronosdemo.entities.WorkerEvent;
 import com.moga.khronosdemo.entities.WorkerShift;
 import com.moga.khronosdemo.entities.Zone;
 import com.moga.khronosdemo.entities.enums.Role;
+import com.moga.khronosdemo.entities.enums.TimeEntrySource;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
+import com.moga.khronosdemo.repositories.TimeEntryChangeRepository;
+import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.repositories.WorkerEventRepository;
 import com.moga.khronosdemo.repositories.WorkerRateRepository;
@@ -36,6 +40,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -91,6 +96,12 @@ public abstract class IntegrationTest {
 
     @Autowired
     protected WorkerRateRepository workerRateRepository;
+
+    @Autowired
+    protected TimeEntryRepository timeEntryRepository;
+
+    @Autowired
+    protected TimeEntryChangeRepository timeEntryChangeRepository;
 
     @Autowired
     protected PasswordEncoder passwordEncoder;
@@ -167,6 +178,17 @@ public abstract class IntegrationTest {
 
     protected WorkerEvent assign(Worker worker, Event event) {
         return workerEventRepository.save(new WorkerEvent(worker, event));
+    }
+
+    /** A time entry saved as is, without the API's checks or history. clockOut null leaves it open. */
+    protected TimeEntry createTimeEntry(Worker worker, WorkerShift shift, LocalDate businessDate,
+                                       String clockIn, String clockOut, int breakMinutes) {
+        TimeEntry entry = new TimeEntry(worker, Instant.parse(clockIn), TimeEntrySource.WORKER, null, Instant.parse(clockIn));
+        entry.setShift(shift);
+        entry.setBusinessDate(businessDate);
+        entry.setClockOut(clockOut != null ? Instant.parse(clockOut) : null);
+        entry.setBreakMinutes(breakMinutes);
+        return timeEntryRepository.save(entry);
     }
 
     private String encodedPassword() {

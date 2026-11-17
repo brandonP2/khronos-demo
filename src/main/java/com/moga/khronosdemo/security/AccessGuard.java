@@ -3,6 +3,7 @@ package com.moga.khronosdemo.security;
 import com.moga.khronosdemo.entities.enums.Role;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
+import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.repositories.WorkerEventRepository;
 import com.moga.khronosdemo.repositories.WorkerRepository;
@@ -26,11 +27,12 @@ public class AccessGuard {
     private final WorkerShiftRepository workerShiftRepository;
     private final WorkerEventRepository workerEventRepository;
     private final UserRepository userRepository;
+    private final TimeEntryRepository timeEntryRepository;
 
     public AccessGuard(EstablishmentRepository establishmentRepository, ZoneRepository zoneRepository,
                        EventRepository eventRepository, WorkerRepository workerRepository,
                        WorkerShiftRepository workerShiftRepository, WorkerEventRepository workerEventRepository,
-                       UserRepository userRepository) {
+                       UserRepository userRepository, TimeEntryRepository timeEntryRepository) {
         this.establishmentRepository = establishmentRepository;
         this.zoneRepository = zoneRepository;
         this.eventRepository = eventRepository;
@@ -38,6 +40,7 @@ public class AccessGuard {
         this.workerShiftRepository = workerShiftRepository;
         this.workerEventRepository = workerEventRepository;
         this.userRepository = userRepository;
+        this.timeEntryRepository = timeEntryRepository;
     }
 
     public Long currentUserId() {
@@ -156,6 +159,19 @@ public class AccessGuard {
     public boolean isOwnWorkerEvent(Long workerEventId) {
         return workerEventId != null && workerEventRepository.findById(workerEventId)
                 .map(workerEvent -> isSelf(workerEvent.getWorker().getUserId()))
+                .orElse(false);
+    }
+
+    // An entry belongs to the establishment it was recorded at
+    public boolean ownsTimeEntry(Long timeEntryId) {
+        return timeEntryId != null && timeEntryRepository.findById(timeEntryId)
+                .map(entry -> ownsEstablishment(entry.getEstablishment().getId()))
+                .orElse(false);
+    }
+
+    public boolean isOwnTimeEntry(Long timeEntryId) {
+        return timeEntryId != null && timeEntryRepository.findById(timeEntryId)
+                .map(entry -> isSelf(entry.getWorker().getUserId()))
                 .orElse(false);
     }
 }

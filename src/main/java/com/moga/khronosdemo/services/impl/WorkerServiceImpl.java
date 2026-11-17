@@ -13,6 +13,7 @@ import com.moga.khronosdemo.exceptions.BusinessRuleException;
 import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.mappers.WorkerMapper;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
+import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.repositories.WorkerRepository;
 import com.moga.khronosdemo.services.UserService;
@@ -31,15 +32,17 @@ public class WorkerServiceImpl implements WorkerService {
     private final EstablishmentRepository establishmentRepository;
     private final WorkerMapper workerMapper;
     private final UserService userService;
+    private final TimeEntryRepository timeEntryRepository;
 
     public WorkerServiceImpl(WorkerRepository workerRepository, UserRepository userRepository,
                              EstablishmentRepository establishmentRepository, WorkerMapper workerMapper,
-                             UserService userService) {
+                             UserService userService, TimeEntryRepository timeEntryRepository) {
         this.workerRepository = workerRepository;
         this.userRepository = userRepository;
         this.establishmentRepository = establishmentRepository;
         this.workerMapper = workerMapper;
         this.userService = userService;
+        this.timeEntryRepository = timeEntryRepository;
     }
 
     @Override
@@ -91,6 +94,10 @@ public class WorkerServiceImpl implements WorkerService {
         boolean changesEstablishment = !worker.getEstablishment().getId().equals(request.establishmentId());
         if (changesEstablishment && (!worker.getWorkerShifts().isEmpty() || !worker.getWorkerEvents().isEmpty())) {
             throw new BusinessRuleException("Cannot move a worker with shifts or events to another establishment");
+        }
+        // Each entry stays with the establishment it was recorded at, which is the one the worker belongs to
+        if (changesEstablishment && timeEntryRepository.existsByWorker_UserId(userId)) {
+            throw new BusinessRuleException("Cannot move a worker with time entries to another establishment");
         }
         workerMapper.updateEntity(worker, request, getEstablishment(request.establishmentId()));
         return workerMapper.toResponse(worker);

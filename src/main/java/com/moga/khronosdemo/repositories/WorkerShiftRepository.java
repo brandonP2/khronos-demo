@@ -60,6 +60,19 @@ public interface WorkerShiftRepository extends JpaRepository<WorkerShift, Long> 
                                      @Param("zoneId") Long zoneId,
                                      @Param("eventTime") LocalDateTime eventTime);
 
+    // The worker's shifts that are running at the given local time or start no later than latestStart,
+    // earliest first. Shifts never overlap, so a shift that is running always comes first.
+    @Query("""
+            select s from WorkerShift s
+            where s.worker.userId = :workerId
+              and s.startsAt <= :latestStart
+              and s.endsAt > :localTime
+            order by s.startsAt
+            """)
+    List<WorkerShift> findShiftsForClockIn(@Param("workerId") Long workerId,
+                                           @Param("localTime") LocalDateTime localTime,
+                                           @Param("latestStart") LocalDateTime latestStart);
+
     // Compares real intervals, so a shift can overlap shifts on the day before or after it
     @Query("""
             select count(s) > 0 from WorkerShift s
