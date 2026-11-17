@@ -7,20 +7,28 @@ import com.moga.khronosdemo.entities.Worker;
 import com.moga.khronosdemo.entities.WorkerShift;
 import com.moga.khronosdemo.entities.Zone;
 import com.moga.khronosdemo.support.IntegrationTest;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDate;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class AssignmentRulesTests extends IntegrationTest {
 
     private static final LocalDate DAY = LocalDate.of(2030, 5, 10);
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     private User owner;
     private Zone hall;
@@ -122,5 +130,65 @@ class AssignmentRulesTests extends IntegrationTest {
                 .andExpect(status().isOk());
 
         assertEquals(false, workerEventRepository.existsById(assignmentId));
+    }
+
+    @Test
+    void aShiftChangeOnlyChecksTheEventsItsIntervalHeld() throws Exception {
+        // An assignment of the same worker, saved without the checks, that no shift covers. It lies outside
+        // the edited shift's interval, before and after the edit, so the edit doesn't look at it
+        Event unrelated = createEvent(terrace, DAY.plusDays(5).atTime(12, 0));
+        Long unrelatedId = assign(worker, unrelated).getId();
+        Event dinner = createEvent(hall, DAY.atTime(19, 0));
+        Long dinnerId = assign(worker, dinner).getId();
+
+        mockMvc.perform(putJson("/api/worker-shifts/{id}", """
+                        { "workerId": %d, "zoneId": %d, "date": "2030-05-10", "startTime": "20:00", "endTime": "23:00" }
+                        """.formatted(worker.getUserId(), hall.getId()), eveningShift.getId()).with(as(owner)))
+                .andExpect(status().isOk());
+
+        assertEquals(false, workerEventRepository.existsById(dinnerId));
+        assertEquals(true, workerEventRepository.existsById(unrelatedId));
+    }
+
+    @Test
+    void aShiftChangeRunsTheSameQueriesHoweverManyAssignmentsTheWorkerHas() throws Exception {
+        long[] withoutHistory = statementsToEditAndDeleteShifts(DAY.plusDays(20));
+
+        for (int i = 1; i <= 5; i++) {
+            LocalDate day = DAY.minusDays(i);
+            createShift(worker, hall, day, "18:00", "23:00");
+            assign(worker, createEvent(hall, day.atTime(19, 0)));
+            assign(worker, createEvent(hall, day.atTime(21, 0)));
+        }
+        long[] withHistory = statementsToEditAndDeleteShifts(DAY.plusDays(30));
+
+        assertTrue(withoutHistory[0] > 0 && withoutHistory[1] > 0, "statistics must be enabled in the test profile");
+        assertEquals(withoutHistory[0], withHistory[0], "editing a shift");
+        assertEquals(withoutHistory[1], withHistory[1], "deleting a shift");
+        // Each change unassigned only the event its shift no longer covers; the history is untouched
+        assertEquals(10, workerEventRepository.count());
+    }
+
+    // Edits one shift and deletes another, each of which covers one assigned event that the change leaves
+    // uncovered, and returns the statements each request ran
+    private long[] statementsToEditAndDeleteShifts(LocalDate day) throws Exception {
+        WorkerShift edited = createShift(worker, hall, day, "18:00", "23:00");
+        assign(worker, createEvent(hall, day.atTime(19, 0)));
+        WorkerShift deleted = createShift(worker, hall, day.plusDays(1), "18:00", "23:00");
+        assign(worker, createEvent(hall, day.plusDays(1).atTime(19, 0)));
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+
+        statistics.clear();
+        mockMvc.perform(putJson("/api/worker-shifts/{id}", """
+                        { "workerId": %d, "zoneId": %d, "date": "%s", "startTime": "20:00", "endTime": "23:00" }
+                        """.formatted(worker.getUserId(), hall.getId(), day), edited.getId()).with(as(owner)))
+                .andExpect(status().isOk());
+        long edit = statistics.getPrepareStatementCount();
+
+        statistics.clear();
+        mockMvc.perform(deleteJson("/api/worker-shifts/{id}", deleted.getId()).with(as(owner)))
+                .andExpect(status().isNoContent());
+        long delete = statistics.getPrepareStatementCount();
+        return new long[]{edit, delete};
     }
 }

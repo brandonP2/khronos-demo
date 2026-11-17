@@ -141,10 +141,10 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
         if (!previousWorker.getUserId().equals(worker.getUserId())) {
             eventPublisher.publishEvent(new ShiftCancelledNotification(Recipient.of(previousWorker), before));
             eventPublisher.publishEvent(new ShiftAssignedNotification(Recipient.of(worker), after));
-            assignmentReconciler.unassignUncoveredEvents(previousWorker);
+            assignmentReconciler.unassignUncoveredEvents(previousWorker, before, null);
         } else if (!before.equals(after)) {
             eventPublisher.publishEvent(new ShiftChangedNotification(Recipient.of(worker), before, after));
-            assignmentReconciler.unassignUncoveredEvents(worker);
+            assignmentReconciler.unassignUncoveredEvents(worker, before, after);
         }
 
         return workerShiftMapper.toResponse(workerShift);
@@ -156,9 +156,10 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
     public void delete(Long id) {
         WorkerShift workerShift = lockAndGet(id, null);
         Worker worker = workerShift.getWorker();
-        eventPublisher.publishEvent(new ShiftCancelledNotification(Recipient.of(worker), ShiftDetails.of(workerShift)));
+        ShiftDetails details = ShiftDetails.of(workerShift);
+        eventPublisher.publishEvent(new ShiftCancelledNotification(Recipient.of(worker), details));
         workerShiftRepository.delete(workerShift);
-        assignmentReconciler.unassignUncoveredEvents(worker);
+        assignmentReconciler.unassignUncoveredEvents(worker, details, null);
     }
 
     private void validate(WorkerShiftRequestDTO request, Worker worker, Zone zone, Long shiftId) {
