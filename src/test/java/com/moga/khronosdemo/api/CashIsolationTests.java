@@ -76,6 +76,41 @@ class CashIsolationTests extends IntegrationTest {
     }
 
     @Test
+    void aWorkerIsForbiddenBeforeTheirRequestIsValidated() throws Exception {
+        // Each of these would answer 400 to an owner of venue A: a body or parameters that fail validation
+        RequestPostProcessor worker = as(workerA);
+        expectForbidden(worker, postJson("/api/cash-closings", "{}"));
+        expectForbidden(worker, putJson("/api/cash-closings/{id}", "{}", draftB));
+        expectForbidden(worker, getJson("/api/cash-closings/establishment/{id}?from=2030-05-10&to=2030-05-01", venueA.getId()));
+        expectForbidden(worker, postJson("/api/expenses", "{}"));
+        expectForbidden(worker, putJson("/api/expenses/{id}", "{ \"amount\": -1 }", expenseB));
+        expectForbidden(worker, getJson("/api/expenses/establishment/{id}?category=FOOD", venueA.getId()));
+        expectForbidden(worker, getJson("/api/reports/establishment/{id}/summary", venueA.getId()));
+        expectForbidden(worker, getJson("/api/reports/establishment/{id}/summary?from=2030-05-01", venueA.getId()));
+        expectForbidden(worker, get("/api/reports/establishment/{id}/cash-closings.csv", venueA.getId()));
+        expectForbidden(worker, getJson("/api/reports/establishment/{id}/hours?from=nope&to=nope", venueA.getId()));
+
+        // An owner still gets the 400
+        mockMvc.perform(postJson("/api/cash-closings", "{}").with(as(ownerA)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(getJson("/api/reports/establishment/{id}/summary", venueA.getId()).with(as(ownerA)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Missing required parameter 'from'"));
+
+        // The worker's own daily report is still theirs to read, and validated as before
+        mockMvc.perform(getJson("/api/reports/worker/{id}/days" + RANGE, workerA.getUserId()).with(worker))
+                .andExpect(status().isOk());
+        mockMvc.perform(getJson("/api/reports/worker/{id}/days", workerA.getUserId()).with(worker))
+                .andExpect(status().isBadRequest());
+
+        // Without a token it is still 401
+        mockMvc.perform(postJson("/api/cash-closings", "{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+        assertNothingOfBChanged();
+    }
+
+    @Test
     void anOwnerCannotReachAnotherOwnersCash() throws Exception {
         for (MockHttpServletRequestBuilder request : everyEndpoint(venueB, closedB, draftB, expenseB)) {
             expectForbidden(as(ownerA), request);

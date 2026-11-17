@@ -1,5 +1,6 @@
 package com.moga.khronosdemo.security;
 
+import com.moga.khronosdemo.entities.enums.Role;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -30,6 +31,18 @@ import java.util.List;
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
+
+    // Paths only owners and admins ever use. Here a worker is turned away before the body or the parameters
+    // are read, so they get 403, never a 400 that describes a request they could not make anyway. Which
+    // owner may reach which establishment is still up to @PreAuthorize and AccessGuard on each endpoint.
+    // /api/reports/worker/** is left out on purpose: a worker reads their own daily report there.
+    private static final String[] OWNERS_AND_ADMINS_ONLY = {
+            "/api/cash-closings/**",
+            "/api/expenses/**",
+            "/api/reports/establishment/**",
+            "/api/workers/*/rates/**",
+            "/api/time-entries/establishment/**"
+    };
 
     private final HandlerExceptionResolver exceptionResolver;
 
@@ -73,6 +86,7 @@ public class SecurityConfig {
                         .requestMatchers("/error", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        .requestMatchers(OWNERS_AND_ADMINS_ONLY).hasAnyRole(Role.OWNER.name(), Role.PLATFORM_ADMIN.name())
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth
                         .authenticationEntryPoint(entryPoint)

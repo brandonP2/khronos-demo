@@ -121,6 +121,25 @@ class TimeTrackingIsolationTests extends IntegrationTest {
         assertEntryUnchanged();
     }
 
+    @Test
+    void aWorkerIsForbiddenFromRatesAndVenueEntriesBeforeTheirRequestIsValidated() throws Exception {
+        // Each of these would answer 400 to an owner: a body or parameters that fail validation
+        RequestPostProcessor worker = as(workerA);
+        expectForbidden(worker, postJson("/api/workers/{id}/rates", "{}", workerA.getUserId()));
+        expectForbidden(worker, getJson("/api/workers/{id}/rates", workerA.getUserId()));
+        expectForbidden(worker, deleteJson("/api/workers/{id}/rates/{rateId}", workerA.getUserId(), rateB.getId()));
+        expectForbidden(worker, getJson("/api/time-entries/establishment/{id}?from=nope",
+                workerA.getEstablishment().getId()));
+        expectForbidden(worker, getJson("/api/time-entries/establishment/{id}/open", workerA.getEstablishment().getId()));
+
+        // Their own entries are still theirs to read, and validated as before
+        mockMvc.perform(getJson("/api/time-entries/worker/{id}", workerA.getUserId()).with(worker))
+                .andExpect(status().isOk());
+        mockMvc.perform(getJson("/api/time-entries/worker/{id}?from=nope", workerA.getUserId()).with(worker))
+                .andExpect(status().isBadRequest());
+        assertEntryUnchanged();
+    }
+
     private void expectForbidden(RequestPostProcessor caller, MockHttpServletRequestBuilder request) throws Exception {
         mockMvc.perform(request.with(caller))
                 .andExpect(status().isForbidden())

@@ -57,6 +57,8 @@ Deleting a parent also deletes everything under it. For example, deleting an est
 
 Each endpoint checks access with `@PreAuthorize` rules backed by `AccessGuard`. A request for data that belongs to another owner returns **403**.
 
+The paths that only owners and admins use, `/api/cash-closings/**`, `/api/expenses/**`, `/api/reports/establishment/**`, `/api/workers/{workerId}/rates/**` and `/api/time-entries/establishment/**`, also turn a worker away by URL, before the request is read: a worker gets **403** there even when the body or the parameters are invalid, never a **400** describing them. `/api/reports/worker/**` is not one of them, since workers read their own daily report there.
+
 ## Authentication
 
 Clients sign in once and then send a short-lived token with every request.
@@ -344,7 +346,7 @@ The database refuses these deletes as well (`ON DELETE RESTRICT` on the closings
 
 ### Cash closing, expense and summary endpoints
 
-All of them are for the establishment's owner or an admin; a worker gets **403**, and so does an owner for another owner's establishment, also when it is named in a request body.
+All of them are for the establishment's owner or an admin; a worker gets **403**, before any validation, and so does an owner for another owner's establishment, also when it is named in a request body.
 
 | Method and path | Body | Answer |
 |---|---|---|
