@@ -53,7 +53,7 @@ public class WorkerController {
 
     @DeleteMapping("/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasRole('PLATFORM_ADMIN'")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     public void delete(@PathVariable Long userId) {
         workerService.delete(userId);
     }
