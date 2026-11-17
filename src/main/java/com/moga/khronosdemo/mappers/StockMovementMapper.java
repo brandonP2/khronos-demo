@@ -11,7 +11,8 @@ import java.math.RoundingMode;
 @Component
 public class StockMovementMapper {
 
-    // The product is read for its name and unit, so listings fetch it with the movements
+    // The product is read for its name and unit, so listings fetch it with the movements. The purchase
+    // order's id comes from the foreign key without loading the order
     public StockMovementResponseDTO toResponse(StockMovement movement) {
         if (movement == null) {
             return null;
@@ -30,7 +31,7 @@ public class StockMovementMapper {
                 movement.getDate(),
                 movement.getCreatedAt(),
                 movement.getCreatedByName(),
-                null,
+                movement.getPurchaseOrder() != null ? movement.getPurchaseOrder().getId() : null,
                 movement.getStockAfter()
         );
     }

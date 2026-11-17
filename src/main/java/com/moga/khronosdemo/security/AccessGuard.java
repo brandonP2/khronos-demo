@@ -6,6 +6,7 @@ import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.EventRepository;
 import com.moga.khronosdemo.repositories.ExpenseRepository;
 import com.moga.khronosdemo.repositories.ProductRepository;
+import com.moga.khronosdemo.repositories.PurchaseOrderRepository;
 import com.moga.khronosdemo.repositories.SupplierRepository;
 import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
@@ -40,13 +41,15 @@ public class AccessGuard {
     private final CashClosingRepository cashClosingRepository;
     private final SupplierRepository supplierRepository;
     private final ProductRepository productRepository;
+    private final PurchaseOrderRepository purchaseOrderRepository;
 
     public AccessGuard(EstablishmentRepository establishmentRepository, ZoneRepository zoneRepository,
                        EventRepository eventRepository, WorkerRepository workerRepository,
                        WorkerShiftRepository workerShiftRepository, WorkerEventRepository workerEventRepository,
                        UserRepository userRepository, TimeEntryRepository timeEntryRepository,
                        ExpenseRepository expenseRepository, CashClosingRepository cashClosingRepository,
-                       SupplierRepository supplierRepository, ProductRepository productRepository) {
+                       SupplierRepository supplierRepository, ProductRepository productRepository,
+                       PurchaseOrderRepository purchaseOrderRepository) {
         this.establishmentRepository = establishmentRepository;
         this.zoneRepository = zoneRepository;
         this.eventRepository = eventRepository;
@@ -59,6 +62,7 @@ public class AccessGuard {
         this.cashClosingRepository = cashClosingRepository;
         this.supplierRepository = supplierRepository;
         this.productRepository = productRepository;
+        this.purchaseOrderRepository = purchaseOrderRepository;
     }
 
     public Long currentUserId() {
@@ -234,5 +238,12 @@ public class AccessGuard {
                 .collect(Collectors.toSet())
                 .stream()
                 .allMatch(this::ownsEstablishment);
+    }
+
+    // A purchase order belongs to the establishment it was created for, which never changes
+    public boolean ownsPurchaseOrder(Long purchaseOrderId) {
+        return purchaseOrderId != null && purchaseOrderRepository.findEstablishmentIdById(purchaseOrderId)
+                .map(this::ownsEstablishment)
+                .orElse(false);
     }
 }

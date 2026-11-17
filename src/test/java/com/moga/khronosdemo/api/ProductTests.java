@@ -268,8 +268,8 @@ class ProductTests extends IntegrationTest {
 
         mockMvc.perform(deleteJson("/api/products/{id}", rum).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("Cannot delete a product that has stock movements; deactivate it"
-                        + " instead (PUT /api/products/" + rum + "/active) to keep its history"))
+                .andExpect(jsonPath("$.message").value("Cannot delete a product that has stock movements or purchase"
+                        + " order lines; deactivate it instead (PUT /api/products/" + rum + "/active) to keep its history"))
                 .andExpect(jsonPath("$.code").value("PRODUCT_HAS_HISTORY"));
         mockMvc.perform(deleteJson("/api/products/{id}", gin).with(as(owner)))
                 .andExpect(status().isNoContent());

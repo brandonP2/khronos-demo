@@ -59,6 +59,12 @@ public class StockMovement {
     @Column(nullable = false, precision = 15, scale = 3)
     private BigDecimal stockAfter;
 
+    // The purchase order this purchase was received with; an order with movements can't be deleted
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "purchase_order_id")
+    @OnDelete(action = OnDeleteAction.RESTRICT)
+    private PurchaseOrder purchaseOrder;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -75,8 +81,10 @@ public class StockMovement {
     }
 
     public StockMovement(Product product, StockMovementType type, BigDecimal quantity, BigDecimal unitCost,
-                         String reason, LocalDate date, BigDecimal stockAfter, User createdBy, Instant createdAt) {
+                         String reason, LocalDate date, BigDecimal stockAfter, PurchaseOrder purchaseOrder,
+                         User createdBy, Instant createdAt) {
         this.establishment = product.getEstablishment();
+        this.purchaseOrder = purchaseOrder;
         this.product = product;
         this.type = type;
         this.quantity = quantity;
@@ -123,6 +131,10 @@ public class StockMovement {
 
     public BigDecimal getStockAfter() {
         return stockAfter;
+    }
+
+    public PurchaseOrder getPurchaseOrder() {
+        return purchaseOrder;
     }
 
     public Instant getCreatedAt() {

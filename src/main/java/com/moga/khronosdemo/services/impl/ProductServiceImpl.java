@@ -11,6 +11,7 @@ import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.mappers.ProductMapper;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.ProductRepository;
+import com.moga.khronosdemo.repositories.PurchaseOrderRepository;
 import com.moga.khronosdemo.repositories.StockMovementRepository;
 import com.moga.khronosdemo.repositories.SupplierRepository;
 import com.moga.khronosdemo.services.ProductService;
@@ -44,16 +45,19 @@ public class ProductServiceImpl implements ProductService {
 
     private final ProductRepository productRepository;
     private final StockMovementRepository stockMovementRepository;
+    private final PurchaseOrderRepository purchaseOrderRepository;
     private final SupplierRepository supplierRepository;
     private final EstablishmentRepository establishmentRepository;
     private final StockLedger stockLedger;
     private final ProductMapper productMapper;
 
     public ProductServiceImpl(ProductRepository productRepository, StockMovementRepository stockMovementRepository,
-                              SupplierRepository supplierRepository, EstablishmentRepository establishmentRepository,
-                              StockLedger stockLedger, ProductMapper productMapper) {
+                              PurchaseOrderRepository purchaseOrderRepository, SupplierRepository supplierRepository,
+                              EstablishmentRepository establishmentRepository, StockLedger stockLedger,
+                              ProductMapper productMapper) {
         this.productRepository = productRepository;
         this.stockMovementRepository = stockMovementRepository;
+        this.purchaseOrderRepository = purchaseOrderRepository;
         this.supplierRepository = supplierRepository;
         this.establishmentRepository = establishmentRepository;
         this.stockLedger = stockLedger;
@@ -119,12 +123,14 @@ public class ProductServiceImpl implements ProductService {
         return productMapper.toResponse(product, stockLedger.stockOf(id));
     }
 
-    // Only a product nothing was recorded for can go; one with a history is deactivated instead
+    // Only a product nothing was recorded or ordered for can go; one with a history is deactivated instead.
+    // An order line is added under the same lock, so none can slip in before the delete
     @Override
     public void delete(Long id) {
         Product product = stockLedger.lock(id);
-        if (stockMovementRepository.existsByProduct_Id(id)) {
-            throw new BusinessRuleException("Cannot delete a product that has stock movements; deactivate it instead"
+        if (stockMovementRepository.existsByProduct_Id(id) || purchaseOrderRepository.existsByLines_Product_Id(id)) {
+            throw new BusinessRuleException("Cannot delete a product that has stock movements or purchase order"
+                    + " lines; deactivate it instead"
                     + " (PUT /api/products/" + id + "/active) to keep its history", ErrorCode.PRODUCT_HAS_HISTORY);
         }
         productRepository.delete(product);

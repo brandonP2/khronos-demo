@@ -3,6 +3,7 @@ package com.moga.khronosdemo.services.impl;
 import com.moga.khronosdemo.dtos.response.ErrorCode;
 import com.moga.khronosdemo.entities.Establishment;
 import com.moga.khronosdemo.entities.Product;
+import com.moga.khronosdemo.entities.PurchaseOrder;
 import com.moga.khronosdemo.entities.StockMovement;
 import com.moga.khronosdemo.entities.User;
 import com.moga.khronosdemo.entities.enums.StockMovementType;
@@ -34,7 +35,19 @@ import java.util.stream.Collectors;
  * product (its unit, whether it is active, deleting it) takes the same lock, so a movement never slips in
  * between that check and the change.
  * <p>
- * Lock order: a request that locks several products locks them in id order, in one query.
+ * Lock order. Every request takes the row locks it needs in this one order, leaving out those it doesn't
+ * need, so no two requests can each hold a lock the other is waiting for:
+ * <ol>
+ *   <li>the establishment (EstablishmentRepository.lockById): cash closings, expenses, and receiving a
+ *   purchase order, which may create an expense;</li>
+ *   <li>a purchase order (PurchaseOrderRepository.lockById): editing, ordering, cancelling, deleting or
+ *   receiving it;</li>
+ *   <li>products, in id order and in one query (lock below): every stock movement and count, changes to a
+ *   product, and the products of an order being edited, ordered or received.</li>
+ * </ol>
+ * Receiving an order therefore goes establishment, order, products, then creates its expense under the
+ * establishment lock it already holds. Deleting an expense locks the establishment and then, through the
+ * foreign key that clears purchase_orders.expense_id, the order row: the same order.
  */
 @Component
 class StockLedger {
@@ -107,8 +120,15 @@ class StockLedger {
      */
     StockMovement record(Product product, StockMovementType type, BigDecimal quantity, BigDecimal unitCost,
                          String reason, LocalDate date, BigDecimal stockBefore, User author) {
+        return record(product, type, quantity, unitCost, reason, date, stockBefore, null, author);
+    }
+
+    // The same, for a purchase received with a purchase order
+    StockMovement record(Product product, StockMovementType type, BigDecimal quantity, BigDecimal unitCost,
+                         String reason, LocalDate date, BigDecimal stockBefore, PurchaseOrder purchaseOrder,
+                         User author) {
         return stockMovementRepository.save(new StockMovement(product, type, quantity, unitCost, reason, date,
-                stockBefore.add(quantity), author, auditNow()));
+                stockBefore.add(quantity), purchaseOrder, author, auditNow()));
     }
 
     // An inactive product takes no new movements or purchase order lines

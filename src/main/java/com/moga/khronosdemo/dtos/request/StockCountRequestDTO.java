@@ -7,11 +7,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 
 @CrossFieldValid
 public record StockCountRequestDTO(
@@ -34,15 +31,10 @@ public record StockCountRequestDTO(
 
     @Override
     public Map<String, String> crossFieldErrors() {
-        if (items == null) {
-            return Map.of();
+        if (items != null && CrossFieldChecked.hasRepeats(items.stream()
+                .map(item -> item != null ? item.productId() : null))) {
+            return Map.of("items", "must not contain the same product twice");
         }
-        Set<Long> seen = new HashSet<>();
-        boolean repeated = items.stream()
-                .filter(Objects::nonNull)
-                .map(StockCountItemRequestDTO::productId)
-                .filter(Objects::nonNull)
-                .anyMatch(productId -> !seen.add(productId));
-        return repeated ? Map.of("items", "must not contain the same product twice") : Map.of();
+        return Map.of();
     }
 }

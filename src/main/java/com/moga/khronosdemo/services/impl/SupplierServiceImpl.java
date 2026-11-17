@@ -9,6 +9,7 @@ import com.moga.khronosdemo.exceptions.BusinessRuleException;
 import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.mappers.SupplierMapper;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
+import com.moga.khronosdemo.repositories.PurchaseOrderRepository;
 import com.moga.khronosdemo.repositories.SupplierRepository;
 import com.moga.khronosdemo.services.SupplierService;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -20,6 +21,7 @@ import java.util.List;
 /**
  * An establishment's suppliers. Names are unique within the establishment whatever their case: the
  * service checks first, and the unique index on lower(name) answers the same 409 if two requests race.
+ * A supplier with purchase orders is kept with them; deleting one without clears it from its products.
  */
 @Service
 @Transactional
@@ -29,12 +31,14 @@ public class SupplierServiceImpl implements SupplierService {
 
     private final SupplierRepository supplierRepository;
     private final EstablishmentRepository establishmentRepository;
+    private final PurchaseOrderRepository purchaseOrderRepository;
     private final SupplierMapper supplierMapper;
 
     public SupplierServiceImpl(SupplierRepository supplierRepository, EstablishmentRepository establishmentRepository,
-                               SupplierMapper supplierMapper) {
+                               PurchaseOrderRepository purchaseOrderRepository, SupplierMapper supplierMapper) {
         this.supplierRepository = supplierRepository;
         this.establishmentRepository = establishmentRepository;
+        this.purchaseOrderRepository = purchaseOrderRepository;
         this.supplierMapper = supplierMapper;
     }
 
@@ -66,9 +70,15 @@ public class SupplierServiceImpl implements SupplierService {
         return save(supplier);
     }
 
+    // The database clears the supplier from its products (ON DELETE SET NULL)
     @Override
     public void delete(Long id) {
-        supplierRepository.delete(getSupplier(id));
+        Supplier supplier = getSupplier(id);
+        if (purchaseOrderRepository.existsBySupplier_Id(id)) {
+            throw new BusinessRuleException("Cannot delete a supplier that has purchase orders",
+                    ErrorCode.SUPPLIER_HAS_ORDERS);
+        }
+        supplierRepository.delete(supplier);
     }
 
     // Checked before the entity changes, so the query doesn't flush a duplicate name first

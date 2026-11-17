@@ -65,5 +65,17 @@ public enum ErrorCode {
     PRODUCT_HAS_HISTORY,
 
     /** 409 when a request names a supplier or product of another establishment than the one it is for. */
-    OTHER_ESTABLISHMENT
+    OTHER_ESTABLISHMENT,
+
+    /** 409 when a supplier with purchase orders is deleted. */
+    SUPPLIER_HAS_ORDERS,
+
+    /** 409 when a purchase order is edited, deleted, ordered, cancelled or received in a status that doesn't allow it. */
+    PURCHASE_ORDER_WRONG_STATUS,
+
+    /** 409 when a purchase order is received with nothing received on any line; cancel it instead. */
+    PURCHASE_ORDER_NOTHING_RECEIVED,
+
+    /** 409 when a purchase order is received with an expense but its total is unknown or 0. */
+    PURCHASE_ORDER_NO_TOTAL
 }
