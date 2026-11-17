@@ -309,7 +309,7 @@ Cash expenses come out of the till, so while a day's closing is `CLOSED` its cas
 
 ### Listing ranges
 
-`GET /api/cash-closings/establishment/{id}` and `GET /api/expenses/establishment/{id}` take optional `from` and `to` (`YYYY-MM-DD`, both included) but never return more than 366 days, so a listing without dates doesn't bring back the whole history. The answer keeps its shape, a plain list:
+`GET /api/cash-closings/establishment/{id}` and `GET /api/expenses/establishment/{id}`, and the inventory's `GET /api/stock-movements/establishment/{id}` and `GET /api/purchase-orders/establishment/{id}`, take optional `from` and `to` (`YYYY-MM-DD`, both included) but never return more than 366 days, so a listing without dates doesn't bring back the whole history. For stock movements the days are their business `date`; for purchase orders, the days they were created on in the establishment's time zone. The answer keeps its shape, a plain list, and the other filters still apply within the range:
 
 | Sent | Range listed |
 |---|---|
@@ -318,7 +318,7 @@ Cash expenses come out of the till, so while a day's closing is `CLOSED` its cas
 | Only `to` | `to - 365` to `to` |
 | Both | `from` to `to`; **400** `The date range cannot be longer than 366 days` if that is more than 366 days, and **400** `'from' must not be after 'to'` as before |
 
-To see older records, send the dates of the range you want. Without dates the establishment has to exist, so an admin gets **404** for an id that doesn't; with dates, such a listing is just empty.
+To see older records, send the dates of the range you want; an order created more than 366 days ago no longer shows up without dates, whatever its status. Without dates the establishment has to exist, so an admin gets **404** for an id that doesn't; with dates, such a listing is just empty.
 
 ### Business summary
 
@@ -462,7 +462,7 @@ The ledger is the record of what happened, so **a movement is never edited or de
 
 Movements of the same product take turns: each one is recorded while its product's row is locked, and its `stockAfter` is the stock read under that lock plus its quantity, so two movements sent at once never start from the same stock. Changing a product's unit, deactivating it and deleting it take the same lock.
 
-The listing (`GET /api/stock-movements/establishment/{id}?from&to&productId&type`) is newest business day first, then the latest recorded; every filter is optional and `from`/`to` apply to `date`. A movement entered for an earlier day shows the stock as it was when it was recorded.
+The listing (`GET /api/stock-movements/establishment/{id}?from&to&productId&type`) is newest business day first, then the latest recorded; every filter is optional and `from`/`to` apply to `date`, over at most 366 days (see [Listing ranges](#listing-ranges)): without dates, the last 366 up to today. A movement entered for an earlier day shows the stock as it was when it was recorded.
 
 ### Stock counts
 
@@ -571,9 +571,9 @@ All of them are for the establishment's owner or an admin; a worker gets **403**
 | `PUT /api/products/{id}/active` | `{ "active": false }` | **200** the product |
 | `DELETE /api/products/{id}` | | **204** |
 | `POST /api/stock-movements` | the movement | **201** the movement |
-| `GET /api/stock-movements/establishment/{id}?from&to&productId&type` | | **200** movements, newest first |
+| `GET /api/stock-movements/establishment/{id}?from&to&productId&type` | | **200** movements, newest first; at most 366 days (see [Listing ranges](#listing-ranges)) |
 | `POST /api/stock-counts` | the count | **201** the `COUNT` movements |
-| `GET /api/purchase-orders/establishment/{id}?status&from&to` | | **200** orders, newest first; `from` and `to` are days of creation in the establishment's time zone |
+| `GET /api/purchase-orders/establishment/{id}?status&from&to` | | **200** orders, newest first; `from` and `to` are days of creation in the establishment's time zone, at most 366 days (see [Listing ranges](#listing-ranges)) |
 | `GET /api/purchase-orders/{id}` | | **200** the order |
 | `POST /api/purchase-orders` | the order | **201** the order, `DRAFT` |
 | `PUT /api/purchase-orders/{id}` | the order | **200** the order |

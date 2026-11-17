@@ -7,6 +7,7 @@ import com.moga.khronosdemo.entities.User;
 import com.moga.khronosdemo.entities.enums.StockMovementType;
 import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.mappers.StockMovementMapper;
+import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.StockMovementRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.services.StockMovementService;
@@ -30,24 +31,28 @@ import java.util.List;
 public class StockMovementServiceImpl implements StockMovementService {
 
     private final StockMovementRepository stockMovementRepository;
+    private final EstablishmentRepository establishmentRepository;
     private final UserRepository userRepository;
     private final StockLedger stockLedger;
     private final StockMovementMapper stockMovementMapper;
 
-    public StockMovementServiceImpl(StockMovementRepository stockMovementRepository, UserRepository userRepository,
+    public StockMovementServiceImpl(StockMovementRepository stockMovementRepository,
+                                    EstablishmentRepository establishmentRepository, UserRepository userRepository,
                                     StockLedger stockLedger, StockMovementMapper stockMovementMapper) {
         this.stockMovementRepository = stockMovementRepository;
+        this.establishmentRepository = establishmentRepository;
         this.userRepository = userRepository;
         this.stockLedger = stockLedger;
         this.stockMovementMapper = stockMovementMapper;
     }
 
-    // Newest business day first, then the latest recorded; every filter is optional
+    // Newest business day first, then the latest recorded; every filter is optional. The business days
+    // cover at most 366 days (see DateRange.capped): without dates, the last 366 up to today
     @Override
     @Transactional(readOnly = true)
     public List<StockMovementResponseDTO> findByEstablishment(Long establishmentId, LocalDate from, LocalDate to,
                                                               Long productId, StockMovementType type) {
-        DateRange range = new DateRange(from, to);
+        DateRange range = DateRange.capped(from, to, ReportServiceImpl.MAX_DAYS, () -> today(establishmentId));
         return stockMovementRepository.findByEstablishment(establishmentId, range.from(), range.to(), productId, type)
                 .stream()
                 .map(stockMovementMapper::toResponse)
@@ -74,6 +79,12 @@ public class StockMovementServiceImpl implements StockMovementService {
         BigDecimal stockBefore = stockLedger.stockOf(product.getId());
         return stockMovementMapper.toResponse(stockLedger.record(product, type, quantity, unitCost,
                 clean(request.reason()), date, stockBefore, getUser(actorId)));
+    }
+
+    // Today in the establishment's time zone; only asked for when a listing is sent without dates
+    private LocalDate today(Long establishmentId) {
+        return stockLedger.today(establishmentRepository.findById(establishmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Establishment", establishmentId)));
     }
 
     private User getUser(Long id) {

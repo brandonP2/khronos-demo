@@ -95,19 +95,22 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         this.purchaseOrderMapper = purchaseOrderMapper;
     }
 
-    // Newest first. from and to are days of creation in the establishment's time zone, both included
+    // Newest first. from and to are days of creation in the establishment's time zone, both included, and
+    // cover at most 366 days (see DateRange.capped): without dates, the last 366 up to today. Only then does
+    // the establishment have to exist; with dates, one that doesn't has no orders
     @Override
     @Transactional(readOnly = true)
     public List<PurchaseOrderResponseDTO> findByEstablishment(Long establishmentId, PurchaseOrderStatus status,
                                                               LocalDate from, LocalDate to) {
-        DateRange range = new DateRange(from, to);
         Optional<Establishment> establishment = establishmentRepository.findById(establishmentId);
+        DateRange range = DateRange.capped(from, to, ReportServiceImpl.MAX_DAYS, () -> stockLedger.today(establishment
+                .orElseThrow(() -> new ResourceNotFoundException("Establishment", establishmentId))));
         if (establishment.isEmpty()) {
             return List.of();
         }
         ZoneId zone = establishment.get().getZoneId();
-        Instant start = range.from() != null ? range.from().atStartOfDay(zone).toInstant() : null;
-        Instant until = range.to() != null ? range.to().plusDays(1).atStartOfDay(zone).toInstant() : null;
+        Instant start = range.from().atStartOfDay(zone).toInstant();
+        Instant until = range.to().plusDays(1).atStartOfDay(zone).toInstant();
         return purchaseOrderRepository.findByEstablishment(establishmentId, status, start, until).stream()
                 .map(purchaseOrderMapper::toResponse)
                 .toList();

@@ -132,6 +132,50 @@ class PurchaseOrderTests extends IntegrationTest {
     }
 
     @Test
+    void aListingCoversAtMost366Days() throws Exception {
+        // 22:30 UTC on 8 May 2029 is already the 9th in Madrid
+        clock.setNow(Instant.parse("2029-05-08T22:30:00Z"));
+        Long dayBefore = createOrder(lineOf(rum, "1", null));
+        clock.setNow(Instant.parse("2029-05-10T10:00:00Z"));
+        Long firstDay = createOrder(lineOf(rum, "1", null));
+        transition(firstDay, "order").andExpect(status().isOk());
+        clock.setNow(Instant.parse("2030-05-10T12:00:00Z"));
+        Long friday = createOrder(lineOf(rum, "1", null));
+        String list = "/api/purchase-orders/establishment/" + venue.getId();
+
+        // Without dates: the 366 days of creation up to today, Friday 10 May 2030 in Madrid
+        mockMvc.perform(getJson(list).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(friday.intValue(), firstDay.intValue())));
+        // With only one date, the other is 365 days away from it; the status still applies
+        mockMvc.perform(getJson(list + "?from=2029-05-09").with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(firstDay.intValue(), dayBefore.intValue())));
+        mockMvc.perform(getJson(list + "?to=2029-05-31&status=DRAFT").with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(dayBefore.intValue())));
+        // Both: at most 366 days, as in the reports
+        mockMvc.perform(getJson(list + "?from=2029-05-10&to=2030-05-10").with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(friday.intValue(), firstDay.intValue())));
+        mockMvc.perform(getJson(list + "?from=2029-05-09&to=2030-05-10").with(as(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("The date range cannot be longer than 366 days"));
+
+        // Today is the venue's: at 23:30 UTC it is already Saturday in Madrid, so 10 May 2029 drops out
+        clock.setNow(Instant.parse("2030-05-10T23:30:00Z"));
+        mockMvc.perform(getJson(list).with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(friday.intValue())));
+
+        // An admin listing an establishment that doesn't exist: 404 without dates, nothing with them
+        User admin = createAdmin("admin");
+        Long missing = venue.getId() + 1000;
+        mockMvc.perform(getJson("/api/purchase-orders/establishment/{id}", missing).with(as(admin)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(getJson("/api/purchase-orders/establishment/{id}?to=2030-05-10", missing).with(as(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
     void onlyADraftCanBeEditedOrDeleted() throws Exception {
         Long id = createOrder(lineOf(beer, "2", "90"), lineOf(rum, "6", null));
         Long otherSupplier = supplier(venue, "Bodegas");

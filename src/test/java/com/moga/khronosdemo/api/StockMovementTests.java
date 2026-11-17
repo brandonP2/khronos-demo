@@ -250,6 +250,45 @@ class StockMovementTests extends IntegrationTest {
     }
 
     @Test
+    void aListingCoversAtMost366Days() throws Exception {
+        Long friday = id(post(rum, "PURCHASE", "1", null, null, "2030-05-10"));
+        Long firstDay = id(post(rum, "PURCHASE", "1", null, null, "2029-05-10"));
+        Long dayBefore = id(post(rum, "CONSUMPTION", "1", null, null, "2029-05-09"));
+        String list = "/api/stock-movements/establishment/" + venue.getId();
+
+        // Without dates: the 366 days up to today, Friday 10 May 2030 in Madrid
+        mockMvc.perform(getJson(list).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(friday.intValue(), firstDay.intValue())));
+        // With only one date, the other is 365 days away from it; the other filters still apply
+        mockMvc.perform(getJson(list + "?from=2029-05-09").with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(firstDay.intValue(), dayBefore.intValue())));
+        mockMvc.perform(getJson(list + "?to=2029-05-31&type=CONSUMPTION").with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(dayBefore.intValue())));
+        // Both: at most 366 days, as in the reports
+        mockMvc.perform(getJson(list + "?from=2029-05-10&to=2030-05-10").with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(friday.intValue(), firstDay.intValue())));
+        mockMvc.perform(getJson(list + "?from=2029-05-09&to=2030-05-10").with(as(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("The date range cannot be longer than 366 days"));
+
+        // Today is the venue's: at 23:30 UTC it is already Saturday in Madrid, so 10 May 2029 drops out
+        clock.setNow(Instant.parse("2030-05-10T23:30:00Z"));
+        mockMvc.perform(getJson(list).with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(friday.intValue())));
+
+        // An admin listing an establishment that doesn't exist: 404 without dates, nothing with them
+        User admin = createAdmin("admin");
+        Long missing = venue.getId() + 1000;
+        mockMvc.perform(getJson("/api/stock-movements/establishment/{id}", missing).with(as(admin)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(getJson("/api/stock-movements/establishment/{id}?from=2030-05-01", missing).with(as(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
     void aMissingProductIsNotFoundForAnAdmin() throws Exception {
         mockMvc.perform(postJson("/api/stock-movements", """
                         { "productId": 999999, "type": "PURCHASE", "quantity": 1 }
