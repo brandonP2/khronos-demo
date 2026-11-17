@@ -214,6 +214,33 @@ class ReportTests extends IntegrationTest {
     }
 
     @Test
+    void aDayWithSeveralShiftsTakesTheStatusOfEachOfThem() throws Exception {
+        Worker hugo = createWorker(venue, "hugo");
+        // Fri: the morning shift was worked, the evening one was not. MISSED, not OK
+        WorkerShift fridayMorning = createShift(hugo, bar, FRI, "09:00", "13:00");
+        createTimeEntry(hugo, fridayMorning, FRI, "2030-05-10T07:00:00Z", "2030-05-10T11:00:00Z", 0);
+        createShift(hugo, bar, FRI, "18:00", "23:00");
+        // Sat: the shift was worked, and there is also an entry at 18:00 with no shift. UNPLANNED
+        WorkerShift saturday = createShift(hugo, bar, SAT, "10:00", "14:00");
+        createTimeEntry(hugo, saturday, SAT, "2030-05-11T08:00:00Z", "2030-05-11T12:00:00Z", 0);
+        createTimeEntry(hugo, null, SAT, "2030-05-11T16:00:00Z", "2030-05-11T17:00:00Z", 0);
+        // Sun: the morning shift was worked and the evening one has not started at 12:00. UPCOMING
+        WorkerShift sundayMorning = createShift(hugo, bar, SUN, "08:00", "11:00");
+        createTimeEntry(hugo, sundayMorning, SUN, "2030-05-12T06:00:00Z", "2030-05-12T09:00:00Z", 0);
+        createShift(hugo, bar, SUN, "20:00", "23:00");
+
+        mockMvc.perform(getJson("/api/reports/worker/{id}/days" + RANGE, hugo.getUserId()).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.days[*].date", contains("2030-05-10", "2030-05-11", "2030-05-12")))
+                .andExpect(jsonPath("$.days[*].status", contains("MISSED", "UNPLANNED", "UPCOMING")));
+        // The hours report counts the same missed shift and entry without a shift
+        mockMvc.perform(getJson("/api/reports/establishment/{id}/hours" + RANGE, venue.getId()).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workers[?(@.firstName == 'First hugo')].missedShiftsCount", contains(1)))
+                .andExpect(jsonPath("$.workers[?(@.firstName == 'First hugo')].unplannedCount", contains(1)));
+    }
+
+    @Test
     void aWorkerReadsTheirOwnDaysWithoutCosts() throws Exception {
         mockMvc.perform(getJson("/api/reports/worker/{id}/days" + RANGE, ana.getUserId()).with(as(ana)))
                 .andExpect(status().isOk())

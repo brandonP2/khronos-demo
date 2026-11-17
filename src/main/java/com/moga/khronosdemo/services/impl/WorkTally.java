@@ -92,10 +92,7 @@ final class WorkTally {
 
     // Shifts that have ended without any counted entry matched to them
     int missedShiftsCount(Instant now) {
-        Set<Long> matched = entries.stream()
-                .filter(entry -> entry.getShift() != null)
-                .map(entry -> entry.getShift().getId())
-                .collect(Collectors.toSet());
+        Set<Long> matched = matchedShiftIds();
         return (int) shifts.stream().filter(shift -> hasEnded(shift, now) && !matched.contains(shift.getId())).count();
     }
 
@@ -107,18 +104,33 @@ final class WorkTally {
         return (int) entries.stream().filter(TimeEntry::isOpen).count();
     }
 
-    // The contract's order: OPEN, MISSED, UPCOMING, UNPLANNED, LATE, OK
+    // The contract's order: OPEN, MISSED, UNPLANNED, LATE, UPCOMING, OK. Each shift and entry of the day
+    // counts on its own, as in the hours report: a day with one shift worked and another missed is MISSED,
+    // and an entry without a shift makes the day UNPLANNED even when its shifts were worked.
     WorkDayStatus dayStatus(Instant now, Duration lateThreshold) {
         if (openEntriesCount() > 0) {
             return WorkDayStatus.OPEN;
         }
-        if (!shifts.isEmpty() && entries.isEmpty()) {
-            return shifts.stream().anyMatch(shift -> hasEnded(shift, now)) ? WorkDayStatus.MISSED : WorkDayStatus.UPCOMING;
+        if (missedShiftsCount(now) > 0) {
+            return WorkDayStatus.MISSED;
         }
-        if (shifts.isEmpty() && !entries.isEmpty()) {
+        if (unplannedCount() > 0) {
             return WorkDayStatus.UNPLANNED;
         }
-        return lateCount(lateThreshold) > 0 ? WorkDayStatus.LATE : WorkDayStatus.OK;
+        if (lateCount(lateThreshold) > 0) {
+            return WorkDayStatus.LATE;
+        }
+        Set<Long> matched = matchedShiftIds();
+        return shifts.stream().anyMatch(shift -> !hasEnded(shift, now) && !matched.contains(shift.getId()))
+                ? WorkDayStatus.UPCOMING
+                : WorkDayStatus.OK;
+    }
+
+    private Set<Long> matchedShiftIds() {
+        return entries.stream()
+                .filter(entry -> entry.getShift() != null)
+                .map(entry -> entry.getShift().getId())
+                .collect(Collectors.toSet());
     }
 
     private boolean isLate(TimeEntry entry, Duration lateThreshold) {
