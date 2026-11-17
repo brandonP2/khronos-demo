@@ -11,8 +11,9 @@ import static com.moga.khronosdemo.entities.Money.euros;
 @Component
 public class ExpenseMapper {
 
-    // The establishment id comes from the foreign key without loading the establishment
-    public ExpenseResponseDTO toResponse(Expense expense) {
+    // The establishment id comes from the foreign key without loading the establishment. purchaseOrderId is
+    // the order whose receipt created the expense, or null; callers look it up, a listing in one query
+    public ExpenseResponseDTO toResponse(Expense expense, Long purchaseOrderId) {
         if (expense == null) {
             return null;
         }
@@ -27,7 +28,8 @@ public class ExpenseMapper {
                 expense.getPaymentMethod(),
                 expense.getNotes(),
                 expense.getCreatedAt(),
-                expense.getCreatedByName()
+                expense.getCreatedByName(),
+                purchaseOrderId
         );
     }
 

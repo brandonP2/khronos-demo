@@ -4,6 +4,9 @@ import com.moga.khronosdemo.entities.Establishment;
 import com.moga.khronosdemo.entities.User;
 import com.moga.khronosdemo.repositories.PurchaseOrderRepository;
 import com.moga.khronosdemo.support.IntegrationTest;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +36,9 @@ class PurchaseOrderTests extends IntegrationTest {
 
     @Autowired
     private PurchaseOrderRepository purchaseOrderRepository;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     private User owner;
     private Establishment venue;
@@ -574,6 +580,65 @@ class PurchaseOrderTests extends IntegrationTest {
     }
 
     @Test
+    void theExpenseOfAnOrderSaysSoAndCannotBeEdited() throws Exception {
+        Long id = createOrder(lineOf(beer, "2", "90"));
+        transition(id, "order");
+        Long expenseId = longAt(receive(id, receiptOf(id, "2"), true, "TRANSFER").andReturn(), "$.expenseId");
+        Long byHand = longAt(mockMvc.perform(postJson("/api/expenses", expenseBody("2030-05-09", "40")).with(as(owner)))
+                .andExpect(status().isCreated())
+                .andReturn(), "$.id");
+
+        // The listing says which order each expense came from
+        mockMvc.perform(getJson("/api/expenses/establishment/{id}", venue.getId()).with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(expenseId.intValue(), byHand.intValue())))
+                .andExpect(jsonPath("$[0].purchaseOrderId").value(id))
+                .andExpect(jsonPath("$[1].purchaseOrderId").value(nullValue()));
+
+        // Its amount, day and category are the order's: it can't be edited, not even to the same values
+        mockMvc.perform(putJson("/api/expenses/{id}", expenseBody("2030-05-10", "180"), expenseId).with(as(owner)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EXPENSE_FROM_PURCHASE_ORDER"))
+                .andExpect(jsonPath("$.details.purchaseOrderId").value(id.toString()))
+                .andExpect(jsonPath("$.message").value("This expense was created when purchase order #" + id
+                        + " was received and cannot be edited; to correct it, delete it and enter it again"));
+        mockMvc.perform(getJson("/api/expenses/establishment/{id}", venue.getId()).with(as(owner)))
+                .andExpect(jsonPath("$[0].amount").value(180.0))
+                .andExpect(jsonPath("$[0].paymentMethod").value("TRANSFER"));
+        // One entered by hand still can be
+        mockMvc.perform(putJson("/api/expenses/{id}", expenseBody("2030-05-09", "45"), byHand).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.amount").value(45.0))
+                .andExpect(jsonPath("$.purchaseOrderId").value(nullValue()));
+
+        // Deleting it is allowed, and then the order has no expense
+        mockMvc.perform(deleteJson("/api/expenses/{id}", expenseId).with(as(owner)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(getJson("/api/purchase-orders/{id}", id).with(as(owner)))
+                .andExpect(jsonPath("$.expenseId").value(nullValue()));
+    }
+
+    @Test
+    void theExpenseListingFindsTheirOrdersInOneQuery() throws Exception {
+        Long first = createOrder(lineOf(beer, "1", "90"));
+        transition(first, "order");
+        receive(first, receiptOf(first, "1"), true, "CARD").andExpect(status().isOk());
+        long one = expenseListingStatements();
+
+        for (int i = 0; i < 4; i++) {
+            Long id = createOrder(lineOf(rum, "1", "10"));
+            transition(id, "order");
+            receive(id, receiptOf(id, "1"), true, "CARD", "2030-05-0" + (i + 1)).andExpect(status().isOk());
+        }
+        long five = expenseListingStatements();
+
+        assertTrue(one > 0, "statistics must be enabled in the test profile");
+        assertEquals(one, five);
+        mockMvc.perform(getJson("/api/expenses/establishment/{id}", venue.getId()).with(as(owner)))
+                .andExpect(jsonPath("$", hasSize(5)))
+                .andExpect(jsonPath("$[0].purchaseOrderId").value(first));
+    }
+
+    @Test
     void suppliersAndProductsOnOrdersAreKept() throws Exception {
         Long draftOnly = product(venue, "Vermut", "BOTTLE", null);
         Long id = createOrder(lineOf(draftOnly, "1", null));
@@ -662,6 +727,21 @@ class PurchaseOrderTests extends IntegrationTest {
 
     private static String lineOf(Long productId, String quantity, String unitCost) {
         return "{ \"productId\": %d, \"quantity\": %s, \"unitCost\": %s }".formatted(productId, quantity, unitCost);
+    }
+
+    private long expenseListingStatements() throws Exception {
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.clear();
+        mockMvc.perform(getJson("/api/expenses/establishment/{id}", venue.getId()).with(as(owner)))
+                .andExpect(status().isOk());
+        return statistics.getPrepareStatementCount();
+    }
+
+    private String expenseBody(String date, String amount) {
+        return """
+                { "establishmentId": %d, "date": "%s", "category": "SUPPLIES", "description": "Pedido",
+                  "amount": %s, "paymentMethod": "TRANSFER" }
+                """.formatted(venue.getId(), date, amount);
     }
 
     private void setActive(Long productId, boolean active) throws Exception {

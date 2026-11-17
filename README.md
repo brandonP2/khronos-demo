@@ -304,6 +304,8 @@ Requests on the same establishment's cash take turns: every change to a closing 
 - `paymentMethod`: `CASH`, `CARD`, `TRANSFER`, `OTHER`.
 - `description` 1 to 150 characters, `supplier` at most 100, `notes` at most 500, `amount` more than 0. The date can't be later than today in the establishment's time zone (**409** `The expense date cannot be in the future`, `code` `FUTURE_DATE`). `establishmentId` is only read on creation.
 - The listing is newest first, then by id, with optional `from`, `to` and `category` filters. Like the cash closings' listing, it covers at most 366 days (see [Listing ranges](#listing-ranges)).
+- The response has the fields sent, plus `id`, `establishmentId`, `createdAt`, `createdByName` and `purchaseOrderId`: the [purchase order](#purchase-orders-and-receiving) whose receipt created the expense, or `null` for one entered by hand. The listing finds them all in one more query, however many expenses there are.
+- An expense created by receiving a purchase order is that order's record of what was paid, so it can't be edited: **409** `This expense was created when purchase order #12 was received and cannot be edited; to correct it, delete it and enter it again`, with `code` `EXPENSE_FROM_PURCHASE_ORDER` and the order's id in `details.purchaseOrderId` (`"12"`). Clients can tell it apart beforehand by its `purchaseOrderId`. It can still be deleted, under the closed-day rule below; the order keeps its movements and its `expenseId` becomes null.
 
 Cash expenses come out of the till, so while a day's closing is `CLOSED` its cash expenses can't be added, changed, moved in or out, or deleted: **409** `The cash closing of 2026-11-20 is closed; reopen it to add, change or delete cash expenses of that day`, with `code` `CASH_DAY_CLOSED` and the closed day in `details.date`. An expense counts as cash if it was paid in cash before the change or will be after it. Other payment methods are never locked.
 
@@ -512,7 +514,7 @@ In one transaction it:
 
 `receivedDate` defaults to today in the establishment's time zone and can't be later (**409** `The received date cannot be in the future`, `FUTURE_DATE`). A line can be received as 0 (it didn't come), but not all of them (**409** `Nothing was received; cancel the purchase order instead`, `PURCHASE_ORDER_NOTHING_RECEIVED`). A missing line or one of another order answers **400** (`Every line of the purchase order must be sent; line 22 is missing`, `Line 99 is not a line of this purchase order`). With `createExpense` true, `paymentMethod` is required (**400** `fieldErrors.paymentMethod`), and a total that is null or 0 answers **409** `The received purchase order has no total to record as an expense; give its lines a unit cost or receive it without an expense` (`PURCHASE_ORDER_NO_TOTAL`). The expense goes through the same rules as one entered by hand: a cash expense on a day whose cash closing is closed answers that **409** (`The cash closing of 2026-11-20 is closed; ...`, `code` `CASH_DAY_CLOSED`, the day in `details.date`), and **nothing at all is received**: no movement, no change to the products' costs, and the order stays `ORDERED` with its lines as they were.
 
-Deleting that expense later (`DELETE /api/expenses/{id}`) keeps the order received with its movements; its `expenseId` becomes null. Editing the expense doesn't change the order.
+The expense's `purchaseOrderId` is the order's id. It can't be edited (**409** `EXPENSE_FROM_PURCHASE_ORDER`, see [Expenses](#expenses)), so its amount stays the order's total. Deleting it (`DELETE /api/expenses/{id}`) is allowed, with the closed-day rule of any cash expense: the order stays received with its movements and its `expenseId` becomes null, and a corrected expense can then be entered by hand.
 
 **Lock order.** Requests take the row locks they need in one order, leaving out those they don't need, so no two requests can wait for each other: first the establishment, then a purchase order, then products in id order. Receiving takes all three, because its expense needs the establishment's lock, which cash closings and expenses also take; editing and ordering take the order and then its products, cancelling and deleting only the order; movements, counts and changes to a product only products; deleting an expense takes the establishment and then, through the foreign key that clears `expenseId`, the order.
 
@@ -787,8 +789,9 @@ Every error comes back in the same shape:
 | `PURCHASE_ORDER_WRONG_STATUS` | 409 | The purchase order's status doesn't allow that edit, delete or transition |
 | `PURCHASE_ORDER_NOTHING_RECEIVED` | 409 | Every line of the receipt is 0; cancel the order instead |
 | `PURCHASE_ORDER_NO_TOTAL` | 409 | An expense was asked for but the total received is unknown or 0 |
+| `EXPENSE_FROM_PURCHASE_ORDER` | 409 | Editing an expense that receiving a purchase order created; delete it and enter it again instead. `details.purchaseOrderId` is that order |
 
-`details` only comes with `CASH_CLOSING_EXISTS` and `CASH_DAY_CLOSED`, and is left out otherwise. It holds what the error is about as strings, so clients don't have to parse the message; for now that is `date`, the business day as `YYYY-MM-DD`:
+`details` only comes with `CASH_CLOSING_EXISTS`, `CASH_DAY_CLOSED` and `EXPENSE_FROM_PURCHASE_ORDER`, and is left out otherwise. It holds what the error is about as strings, so clients don't have to parse the message: `date`, the business day as `YYYY-MM-DD`, for the first two, and `purchaseOrderId`, the order's id as a string such as `"12"`, for the third:
 
 ```json
 {

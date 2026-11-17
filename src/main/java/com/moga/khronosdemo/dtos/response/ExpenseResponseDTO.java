@@ -21,6 +21,8 @@ public record ExpenseResponseDTO(
         String notes,
         Instant createdAt,
         // Kept even if that account is deleted later
-        String createdByName
+        String createdByName,
+        // The purchase order whose receipt created this expense, which then can't be edited; null otherwise
+        Long purchaseOrderId
 ) {
 }

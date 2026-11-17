@@ -80,5 +80,11 @@ public enum ErrorCode {
     PURCHASE_ORDER_NOTHING_RECEIVED,
 
     /** 409 when a purchase order is received with an expense but its total is unknown or 0. */
-    PURCHASE_ORDER_NO_TOTAL
+    PURCHASE_ORDER_NO_TOTAL,
+
+    /**
+     * 409 when an expense created by receiving a purchase order is edited; details.purchaseOrderId is that
+     * order. Such an expense can only be deleted, and entered again by hand if it needs correcting.
+     */
+    EXPENSE_FROM_PURCHASE_ORDER
 }

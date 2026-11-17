@@ -58,9 +58,12 @@ class ExpenseTests extends IntegrationTest {
                 .andExpect(jsonPath("$.notes").value(nullValue()))
                 .andExpect(jsonPath("$.createdAt").value("2030-05-10T12:00:00Z"))
                 .andExpect(jsonPath("$.createdByName").value("First owner Last owner"))
+                // Entered by hand, not by receiving a purchase order
+                .andExpect(jsonPath("$.purchaseOrderId").value(nullValue()))
                 .andReturn();
         // Money always goes out with two decimals
         assertEquals(true, result.getResponse().getContentAsString().contains("\"amount\":120.50"));
+        assertEquals(true, result.getResponse().getContentAsString().contains("\"purchaseOrderId\":null"));
 
         Expense saved = expenseRepository.findById(longAt(result, "$.id")).orElseThrow();
         assertEquals(new BigDecimal("120.50"), saved.getAmount());
@@ -135,7 +138,8 @@ class ExpenseTests extends IntegrationTest {
                 .andExpect(jsonPath("$.amount").value(99.99))
                 .andExpect(jsonPath("$.paymentMethod").value("TRANSFER"))
                 .andExpect(jsonPath("$.notes").value("Invoice 42"))
-                .andExpect(jsonPath("$.createdByName").value("First owner Last owner"));
+                .andExpect(jsonPath("$.createdByName").value("First owner Last owner"))
+                .andExpect(jsonPath("$.purchaseOrderId").value(nullValue()));
 
         // Without establishmentId too
         mockMvc.perform(putJson("/api/expenses/{id}", body(null, "2030-05-08", "OTHER", "5"), id).with(as(owner)))
@@ -155,7 +159,8 @@ class ExpenseTests extends IntegrationTest {
         String list = "/api/expenses/establishment/" + venue.getId();
         mockMvc.perform(getJson(list).with(as(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].id", contains(third.intValue(), second.intValue(), first.intValue(), rent.intValue())));
+                .andExpect(jsonPath("$[*].id", contains(third.intValue(), second.intValue(), first.intValue(), rent.intValue())))
+                .andExpect(jsonPath("$[*].purchaseOrderId", contains(nullValue(), nullValue(), nullValue(), nullValue())));
         mockMvc.perform(getJson(list + "?from=2030-05-09").with(as(owner)))
                 .andExpect(jsonPath("$[*].id", contains(third.intValue(), second.intValue())));
         mockMvc.perform(getJson(list + "?to=2030-05-08").with(as(owner)))

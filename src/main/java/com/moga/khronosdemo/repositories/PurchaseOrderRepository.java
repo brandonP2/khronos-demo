@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,6 +45,20 @@ public interface PurchaseOrderRepository extends JpaRepository<PurchaseOrder, Lo
     @Query("select o.establishment.id from PurchaseOrder o where o.id = :id")
     Optional<Long> findEstablishmentIdById(@Param("id") Long id);
 
+    // The order whose receipt created the expense, if any (an expense records at most one order)
+    @Query("select o.id from PurchaseOrder o where o.expense.id = :expenseId")
+    Optional<Long> findIdByExpenseId(@Param("expenseId") Long expenseId);
+
+    // Each of the establishment's expenses dated from 'from' to 'to', both included, that receiving one of
+    // its orders created, with that order, in one query
+    @Query("""
+            select e.id as expenseId, o.id as purchaseOrderId from PurchaseOrder o join o.expense e
+            where o.establishment.id = :establishmentId and e.date >= :from and e.date <= :to
+            """)
+    List<ExpenseOrder> findExpenseOrders(@Param("establishmentId") Long establishmentId,
+                                         @Param("from") LocalDate from,
+                                         @Param("to") LocalDate to);
+
     boolean existsBySupplier_Id(Long supplierId);
 
     boolean existsByEstablishment_Id(Long establishmentId);
@@ -51,4 +66,11 @@ public interface PurchaseOrderRepository extends JpaRepository<PurchaseOrder, Lo
     boolean existsByEstablishment_Owner_Id(Long ownerId);
 
     boolean existsByLines_Product_Id(Long productId);
+
+    interface ExpenseOrder {
+
+        Long getExpenseId();
+
+        Long getPurchaseOrderId();
+    }
 }

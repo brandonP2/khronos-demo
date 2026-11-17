@@ -64,7 +64,8 @@ import java.util.stream.Collectors;
  * needs that lock and the lock order is establishment, order, products (see StockLedger).
  * <p>
  * Deleting the expense later (DELETE /api/expenses/{id}) keeps the order received with its movements;
- * the database only clears its expense_id.
+ * the database only clears its expense_id. Editing it is refused (see ExpenseServiceImpl), so while it is
+ * linked its amount stays the order's total.
  */
 @Service
 @Transactional
