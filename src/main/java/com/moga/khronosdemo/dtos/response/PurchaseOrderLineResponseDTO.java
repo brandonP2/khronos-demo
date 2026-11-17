@@ -11,7 +11,8 @@ public record PurchaseOrderLineResponseDTO(
         ProductUnit unit,
         // Ordered, with three decimals
         BigDecimal quantity,
-        // Euros per unit: the one ordered, or the one received when it was given
+        // Euros per unit: the one ordered, or the one received when it was given; a line that came in
+        // without either has its product's cost at the time it was received
         BigDecimal unitCost,
         // Null until the order is received
         BigDecimal receivedQuantity,

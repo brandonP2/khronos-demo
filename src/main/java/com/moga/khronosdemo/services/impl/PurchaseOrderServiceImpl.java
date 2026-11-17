@@ -53,7 +53,9 @@ import java.util.stream.Collectors;
  * <p>
  * Receiving an order is one transaction: it records a PURCHASE movement for each line that came in,
  * updates the cost of each product received with a cost and, if asked, creates the expense through
- * ExpenseService, with its own checks. When that expense is in cash and its day's cash closing is closed,
+ * ExpenseService, with its own checks. Each line that came in is valued at its own cost; one without a
+ * cost takes its product's and keeps it, so the line totals, the order's total, the movements' values and
+ * the expense all agree. When that expense is in cash and its day's cash closing is closed,
  * ExpenseService refuses it with its own 409 (CASH_DAY_CLOSED, the day in details.date) and nothing at all
  * is received.
  * <p>
@@ -214,6 +216,14 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 line.setUnitCost(receipt.unitCost().setScale(2, RoundingMode.UNNECESSARY));
             }
         }
+        // A line that came in without a cost of its own is valued at its product's cost, read under the
+        // product's lock, and keeps it: its lineTotal, the order's total, its movement's value and the
+        // expense then all agree. Without a cost anywhere it stays without one, outside the total
+        for (PurchaseOrderLine line : arrived) {
+            if (line.getUnitCost() == null) {
+                line.setUnitCost(products.get(line.getProduct().getId()).getUnitCost());
+            }
+        }
 
         User author = getUser(actorId);
         // The expense goes first: if ExpenseService refuses it, nothing has been recorded yet, and the
@@ -226,13 +236,13 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         Map<Long, BigDecimal> stock = stockLedger.stockOf(products.keySet());
         for (PurchaseOrderLine line : arrived) {
             Product product = products.get(line.getProduct().getId());
-            // The movement is valued at the line's cost, or the product's when the line has none
-            BigDecimal unitCost = line.getUnitCost() != null ? line.getUnitCost() : product.getUnitCost();
+            // The movement is valued at the line's cost, which becomes the product's (the same one when the
+            // line took it from the product)
             if (line.getUnitCost() != null) {
                 product.setUnitCost(line.getUnitCost());
             }
-            stockLedger.record(product, StockMovementType.PURCHASE, line.getReceivedQuantity(), unitCost, null,
-                    receivedDate, stock.get(product.getId()), order, author);
+            stockLedger.record(product, StockMovementType.PURCHASE, line.getReceivedQuantity(), line.getUnitCost(),
+                    null, receivedDate, stock.get(product.getId()), order, author);
         }
         order.setStatus(PurchaseOrderStatus.RECEIVED);
         order.setReceivedDate(receivedDate);

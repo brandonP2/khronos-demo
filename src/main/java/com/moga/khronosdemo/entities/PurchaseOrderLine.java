@@ -34,7 +34,8 @@ public class PurchaseOrderLine {
     @Column(nullable = false, precision = 12, scale = 3)
     private BigDecimal quantity;
 
-    // Euros per unit; the one received replaces the one ordered when it is given
+    // Euros per unit; the one received replaces the one ordered when it is given, and a line that comes in
+    // without either takes its product's cost at that moment
     @Column(precision = 12, scale = 2)
     private BigDecimal unitCost;
 

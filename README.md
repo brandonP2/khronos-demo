@@ -495,7 +495,7 @@ An order has 1 to 200 lines, each product once (**400** `fieldErrors.lines`), al
 
 Any other move answers **409** with code `PURCHASE_ORDER_WRONG_STATUS` and a message that names the status, for example `Only a draft purchase order can be edited; this one is ORDERED` (also `... can be deleted`, `... can be ordered`, `Only a draft or ordered purchase order can be cancelled; ...` and `Only an ordered purchase order can be received; ...`).
 
-Each line's `lineTotal` is its quantity times its `unitCost`, the quantity received once the order is received and the one ordered before; null without a cost. The order's `total` adds up the lines that have one, and is null when none has.
+Each line's `lineTotal` is its quantity times its `unitCost`, the quantity received once the order is received and the one ordered before; null without a cost. The order's `total` adds up the lines that have one, and is null when none has. Once received, a line that came in without a cost of its own has its product's cost at that moment as its `unitCost` (see below), so it counts in `lineTotal`, `total` and the expense.
 
 Receiving takes every line of the order, each once:
 
@@ -506,7 +506,7 @@ Receiving takes every line of the order, each once:
 
 In one transaction it:
 
-1. records a `PURCHASE` movement, with the order's `purchaseOrderId`, for each line with `receivedQuantity > 0`, valued at the line's cost (the one received if sent, else the one ordered), or at the product's cost when the line has none;
+1. records a `PURCHASE` movement, with the order's `purchaseOrderId`, for each line with `receivedQuantity > 0`, valued at the line's cost: the one received if sent, else the one ordered, else the product's cost at that moment. That cost is kept as the line's `unitCost`, so the line's `lineTotal`, the order's `total`, the movement's `value` and the expense's `amount` all count the same euros: 5 units at 10.00 and 4 units without a cost of a product that costs 3.00 make a total, and an expense, of 62.00. A line that came in without a cost while its product has none either stays without one, and is left out of the total and the expense; a line received as 0 keeps the cost it had;
 2. makes each cost received the product's `unitCost`;
 3. if `createExpense` is true, creates an [expense](#expenses): category `SUPPLIES`, `date` = the day received, `supplier` = the supplier's name, `description` = `Pedido #<id>`, `amount` = the order's total, and the `paymentMethod` sent.
 

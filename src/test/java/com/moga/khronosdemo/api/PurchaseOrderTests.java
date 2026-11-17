@@ -284,16 +284,41 @@ class PurchaseOrderTests extends IntegrationTest {
     }
 
     @Test
-    void aLineWithoutACostIsValuedAtTheProductsCost() throws Exception {
-        Long id = createOrder(lineOf(rum, "6", null));
-        transition(id, "order");
-        receive(id, receiptOf(id, "6"), false, null)
-                .andExpect(jsonPath("$.lines[0].unitCost").value(nullValue()))
-                .andExpect(jsonPath("$.total").value(nullValue()));
+    void aLineWithoutACostTakesTheProductsCostIntoTheTotalAndTheExpense() throws Exception {
+        Long tonic = product(venue, "Tónica", "UNIT", "3.00");
+        // 5 rums at 10.00; 4 tonics without a cost, whose product costs 3.00; lemons without a cost anywhere
+        Long id = createOrder(lineOf(rum, "5", "10"), lineOf(tonic, "4", null), lineOf(lemons, "2", null));
+        transition(id, "order")
+                .andExpect(jsonPath("$.lines[*].unitCost", contains(10.0, null, null)))
+                .andExpect(jsonPath("$.total").value(50.0));
+
+        // The tonics are valued at their product's cost, which the line keeps, so they count in the total
+        Long expenseId = longAt(receive(id, receiptOf(id, "5"), true, "CARD")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lines[*].unitCost", contains(10.0, 3.0, null)))
+                .andExpect(jsonPath("$.lines[*].lineTotal", contains(50.0, 12.0, null)))
+                .andExpect(jsonPath("$.total").value(62.0))
+                .andReturn(), "$.expenseId");
+
+        // The expense and the movements count the same 62.00
+        mockMvc.perform(getJson("/api/expenses/establishment/{id}", venue.getId()).with(as(owner)))
+                .andExpect(jsonPath("$[0].id").value(expenseId))
+                .andExpect(jsonPath("$[0].amount").value(62.0));
         mockMvc.perform(getJson("/api/stock-movements/establishment/{id}", venue.getId()).with(as(owner)))
-                .andExpect(jsonPath("$[0].unitCost").value(10.0))
-                .andExpect(jsonPath("$[0].value").value(60.0))
-                .andExpect(jsonPath("$[0].stockAfter").value(6.0));
+                .andExpect(jsonPath("$[*].productName", contains("Limones", "Tónica", "Ron")))
+                .andExpect(jsonPath("$[*].unitCost", contains(null, 3.0, 10.0)))
+                .andExpect(jsonPath("$[*].value", contains(null, 12.0, 50.0)))
+                .andExpect(jsonPath("$[*].stockAfter", contains(2.0, 4.0, 5.0)));
+
+        // The line keeps the cost it was received at when the product's changes later
+        mockMvc.perform(putJson("/api/products/{id}", """
+                        { "name": "Tónica", "category": "OTHER", "unit": "UNIT", "unitCost": 3.5 }
+                        """, tonic).with(as(owner)))
+                .andExpect(status().isOk());
+        mockMvc.perform(getJson("/api/purchase-orders/{id}", id).with(as(owner)))
+                .andExpect(jsonPath("$.lines[1].unitCost").value(3.0))
+                .andExpect(jsonPath("$.total").value(62.0));
+        assertEquals(new BigDecimal("62.00"), expenseRepository.findById(expenseId).orElseThrow().getAmount());
     }
 
     @Test
