@@ -211,7 +211,8 @@ final class ReportCsvFormatter {
         return csv.toBytes();
     }
 
-    // One row per movement, in the order given; the time it was recorded in the establishment's time zone
+    // One row per movement, in the order given; the time it was recorded in the establishment's time zone.
+    // The value has the quantity's sign (see signedValue)
     static byte[] stockMovements(List<StockMovementResponseDTO> movements, ZoneId zone) {
         CsvWriter csv = new CsvWriter().row(STOCK_MOVEMENTS_HEADER);
         for (StockMovementResponseDTO movement : movements) {
@@ -222,7 +223,7 @@ final class ReportCsvFormatter {
                     movementType(movement.type()),
                     quantity(movement.quantity()),
                     money(movement.unitCost()),
-                    money(movement.value()),
+                    money(signedValue(movement)),
                     quantity(movement.stockAfter()),
                     text(movement.reason()),
                     movement.purchaseOrderId() != null ? String.valueOf(movement.purchaseOrderId()) : "",
@@ -230,6 +231,14 @@ final class ReportCsvFormatter {
                     text(movement.createdByName()));
         }
         return csv.toBytes();
+    }
+
+    // A movement's value is |quantity| x unitCost in the JSON. In the export it takes the quantity's sign,
+    // negative for what went out, so adding up the column gives the inventory report's signed values: a
+    // count that found 1.5 units fewer at 12.00 is -18,00 in both
+    private static BigDecimal signedValue(StockMovementResponseDTO movement) {
+        BigDecimal value = movement.value();
+        return value != null && movement.quantity().signum() < 0 ? value.negate() : value;
     }
 
     private static String dateTime(Instant instant, ZoneId zone) {

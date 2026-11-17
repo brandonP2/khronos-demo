@@ -17,7 +17,8 @@ public record StockMovementResponseDTO(
         BigDecimal quantity,
         // The euros per unit the movement is valued at: the purchase's, or the product's at the time
         BigDecimal unitCost,
-        // |quantity| x unitCost in euros; null without a cost
+        // |quantity| x unitCost in euros, never negative; null without a cost. The stock-movements CSV
+        // export gives it the quantity's sign instead
         BigDecimal value,
         String reason,
         // The business day the movement counts for

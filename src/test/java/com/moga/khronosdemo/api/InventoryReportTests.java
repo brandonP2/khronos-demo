@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
@@ -191,17 +192,56 @@ class InventoryReportTests extends IntegrationTest {
         assertEquals(List.of(
                 "Fecha;Producto;Unidad;Tipo;Cantidad;Coste unitario (EUR);Valor (EUR);Stock después;Motivo;Pedido;"
                         + "Registrado el;Registrado por",
+                // The value has the quantity's sign, unlike the JSON's
                 "02/05/2030;Ron;Botella;Compra;10;10,00;100,00;10;;" + by,
-                "03/05/2030;Ron;Botella;Merma;-1;10,00;10,00;9;'=SUMA(A1);" + by,
+                "03/05/2030;Ron;Botella;Merma;-1;10,00;-10,00;9;'=SUMA(A1);" + by,
                 "04/05/2030;Ginebra;Botella;Compra;4;;;4;;" + by,
-                "05/05/2030;Ron;Botella;Consumo;-8;10,00;80,00;1;;" + by,
+                "05/05/2030;Ron;Botella;Consumo;-8;10,00;-80,00;1;;" + by,
                 "06/05/2030;Ginebra;Botella;Merma;-0,5;;;3,5;Botella rota;" + by,
-                "07/05/2030;'+Tónica;Unidad;Consumo;-5;0,50;2,50;-5;;" + by,
+                "07/05/2030;'+Tónica;Unidad;Consumo;-5;0,50;-2,50;-5;;" + by,
                 "08/05/2030;Limones;kg;Compra;3;2,00;6,00;3;;" + by,
-                "09/05/2030;Limones;kg;Merma;-1;2,00;2,00;2;Pochos;" + by,
+                "09/05/2030;Limones;kg;Merma;-1;2,00;-2,00;2;Pochos;" + by,
                 "10/05/2030;Barril Mahou;Barril;Compra;3;92,50;277,50;3;;" + orderId + by,
-                "11/05/2030;Barril Mahou;Barril;Merma;-0,25;92,50;23,13;2,75;Barril pinchado;" + by,
-                "12/05/2030;Barril Mahou;Barril;Recuento;-0,25;92,50;23,13;2,5;Recuento;" + by), lines);
+                "11/05/2030;Barril Mahou;Barril;Merma;-0,25;92,50;-23,13;2,75;Barril pinchado;" + by,
+                "12/05/2030;Barril Mahou;Barril;Recuento;-0,25;92,50;-23,13;2,5;Recuento;" + by), lines);
+
+        // Adding up the column by type gives the report's values of the range
+        assertEquals(new BigDecimal("383.50"), valueOf(lines, "Compra"));
+        assertEquals(new BigDecimal("-35.13"), valueOf(lines, "Merma"));
+        assertEquals(new BigDecimal("-23.13"), valueOf(lines, "Recuento"));
+        // The movement listing keeps value as |quantity| x unitCost
+        mockMvc.perform(getJson("/api/stock-movements/establishment/{id}?type=COUNT", venue.getId()).with(as(owner)))
+                .andExpect(jsonPath("$[0].quantity").value(-0.25))
+                .andExpect(jsonPath("$[0].value").value(23.13));
+    }
+
+    @Test
+    void aCountThatFoundLessIsNegativeInTheExportAndTheReport() throws Exception {
+        Long olives = product("Aceitunas", "FOOD", "KG", null, "12", null);
+        movement(olives, "PURCHASE", "4", null, "2030-05-13");
+        mockMvc.perform(postJson("/api/stock-counts", """
+                        { "establishmentId": %d, "date": "2030-05-14",
+                          "items": [ { "productId": %d, "countedQuantity": 2.5 } ] }
+                        """.formatted(venue.getId(), olives)).with(as(owner)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$[0].value").value(18.0));
+
+        String range = "?from=2030-05-14&to=2030-05-14";
+        List<String> lines = lines(mockMvc.perform(get("/api/reports/establishment/{id}/stock-movements.csv" + range,
+                venue.getId()).with(as(owner))).andReturn());
+        assertEquals("14/05/2030;Aceitunas;kg;Recuento;-1,5;12,00;-18,00;2,5;;;20/05/2030 12:00;First owner Last owner",
+                lines.get(1));
+        mockMvc.perform(getJson("/api/reports/establishment/{id}/inventory" + range, venue.getId()).with(as(owner)))
+                .andExpect(jsonPath("$.countDifferenceValue").value(-18.0));
+    }
+
+    // The "Valor (EUR)" column of the movements of one type added up
+    private static BigDecimal valueOf(List<String> lines, String type) {
+        return lines.stream().skip(1)
+                .map(line -> line.split(";", -1))
+                .filter(columns -> columns[3].equals(type) && !columns[6].isEmpty())
+                .map(columns -> new BigDecimal(columns[6].replace(',', '.')))
+                .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
     }
 
     @Test

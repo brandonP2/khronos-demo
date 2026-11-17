@@ -453,7 +453,7 @@ A product has no stock field. The response works out:
 | `COUNT` | The difference a physical count found | only recorded by a [count](#stock-counts) | the difference |
 
 - `reason` is required, 3 to 255 characters, for `WASTE` and `ADJUSTMENT`, and optional (at most 255) otherwise.
-- `unitCost` can only be sent with a `PURCHASE`, and then becomes the product's cost. Each movement keeps the cost it is valued at: the purchase's, or the product's at that moment (null if it has none). `value` is `|quantity| × unitCost`.
+- `unitCost` can only be sent with a `PURCHASE`, and then becomes the product's cost. Each movement keeps the cost it is valued at: the purchase's, or the product's at that moment (null if it has none). `value` is `|quantity| × unitCost`, never negative; the [stock-movements CSV export](#inventory-report-and-csv-exports) gives it the quantity's sign instead.
 - `date` is the business day; it defaults to today in the establishment's time zone and can't be later (**409** `The movement date cannot be in the future`, `FUTURE_DATE`).
 - The stock may go below zero; that happens when a purchase wasn't entered, and isn't an error.
 - `stockAfter` is the product's stock right after the movement was recorded.
@@ -543,7 +543,7 @@ In the same format as the [other exports](#csv-exports) (UTF-8 with a BOM, `;`, 
 | Export | File | Columns |
 |---|---|---|
 | `GET /api/reports/establishment/{id}/inventory.csv` | `inventario_{today}.csv` | The stock now, one row per active product, by category and then name: `Producto;Categoría;Unidad;Proveedor;Stock actual;Stock mínimo;Bajo mínimo;Coste unitario (EUR);Valor del stock (EUR)`, with the category and unit in Spanish and `Bajo mínimo` as `Sí` or `No`. |
-| `GET /api/reports/establishment/{id}/stock-movements.csv?from&to` | `movimientos-stock_{from}_{to}.csv` | One row per movement of the range, oldest first: `Fecha;Producto;Unidad;Tipo;Cantidad;Coste unitario (EUR);Valor (EUR);Stock después;Motivo;Pedido;Registrado el;Registrado por`. `Tipo` is `Compra`, `Merma`, `Consumo`, `Ajuste` or `Recuento`; `Pedido` is the purchase order's id; `Registrado el` is in the establishment's time zone. |
+| `GET /api/reports/establishment/{id}/stock-movements.csv?from&to` | `movimientos-stock_{from}_{to}.csv` | One row per movement of the range, oldest first: `Fecha;Producto;Unidad;Tipo;Cantidad;Coste unitario (EUR);Valor (EUR);Stock después;Motivo;Pedido;Registrado el;Registrado por`. `Tipo` is `Compra`, `Merma`, `Consumo`, `Ajuste` or `Recuento`; `Pedido` is the purchase order's id; `Registrado el` is in the establishment's time zone. `Valor (EUR)` has the sign of `Cantidad`, negative for what went out, so adding up the column gives the report's signed values: a count that found 1.5 units fewer at 12.00 is `-1,5` and `-18,00`. This differs from the JSON `value`, which is always `\|quantity\| × unitCost`. |
 
 ### Deleting and inventory records
 
