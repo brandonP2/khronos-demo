@@ -95,6 +95,30 @@ class AuthTests extends IntegrationTest {
     }
 
     @Test
+    void blocksAnIpThatSpraysMadeUpUsernamesToGetFreshAttempts() throws Exception {
+        createOwner("victim");
+        String ip = "203.0.113.30";
+
+        for (int i = 0; i < 5; i++) {
+            login("victim", "wrong-password", ip).andExpect(status().isUnauthorized());
+        }
+        login("victim", "wrong-password", ip).andExpect(status().isTooManyRequests());
+
+        // Failing with made-up usernames, to push the blocked pair out of memory, stops at 50 failures
+        // for the address...
+        for (int i = 0; i < 45; i++) {
+            login("made-up-" + i, "wrong-password", ip).andExpect(status().isUnauthorized());
+        }
+        login("made-up-45", "wrong-password", ip)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
+
+        // ...so the address stays blocked, even with the right password, while others are not affected
+        login("victim", PASSWORD, ip).andExpect(status().isTooManyRequests());
+        login("victim", PASSWORD, "203.0.113.31").andExpect(status().isOk());
+    }
+
+    @Test
     void aSuccessfulSignInClearsEarlierFailures() throws Exception {
         createOwner("forgetful");
         String ip = "203.0.113.20";

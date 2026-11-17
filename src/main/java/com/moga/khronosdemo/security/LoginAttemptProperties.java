@@ -7,6 +7,7 @@ import java.time.Duration;
 @ConfigurationProperties(prefix = "app.login")
 public record LoginAttemptProperties(
         int maxAttempts,
-        Duration window
+        Duration window,
+        int maxAttemptsPerIp
 ) {
 }

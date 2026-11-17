@@ -71,13 +71,14 @@ The user is reloaded from the database on every request, so some changes take ef
 
 HTTP Basic is no longer accepted. If it were, anyone holding a password could skip the one-hour limit.
 
-**Failed logins are limited.** After 5 failed attempts for the same username from the same IP address within 15 minutes, `POST /api/auth/login` answers **429 Too Many Requests** with a `Retry-After` header (in seconds) until those 15 minutes are over, even if the password is right. A successful login clears the count. The counts are kept in memory, per instance, and reset on restart. Behind a reverse proxy, set `SERVER_FORWARD_HEADERS_STRATEGY=native` so the API sees the client's IP and not the proxy's.
+**Failed logins are limited.** After 5 failed attempts for the same username from the same IP address within 15 minutes, `POST /api/auth/login` answers **429 Too Many Requests** with a `Retry-After` header (in seconds) until those 15 minutes are over, even if the password is right. A successful login clears the count. Each IP address also has its own limit, whatever the usernames: after 50 failed attempts within 15 minutes, every login from it answers 429 until those 15 minutes are over. A successful login does not clear that count. The counts are kept in memory, per instance, and reset on restart; failures that stay under the limits can't push a blocked username or address out of memory. Behind a reverse proxy, set `SERVER_FORWARD_HEADERS_STRATEGY=native` so the API sees the client's IP and not the proxy's; otherwise every client shares the proxy's address and its limit.
 
 | Setting | Environment variable | Default |
 |---|---|---|
 | Signing secret (at least 32 bytes) | `JWT_SECRET` | none, the app refuses to start without it |
 | Token lifetime (ISO-8601 duration) | `JWT_TTL` | `PT1H` |
 | Failed logins allowed per username and IP | `LOGIN_MAX_ATTEMPTS` | `5` |
+| Failed logins allowed per IP, whatever the usernames | `LOGIN_MAX_ATTEMPTS_PER_IP` | `50` |
 | Window for those failures (ISO-8601 duration) | `LOGIN_WINDOW` | `PT15M` |
 
 Generate a secret with `openssl rand -base64 48`. Keep it out of version control. Changing it signs everyone out.
