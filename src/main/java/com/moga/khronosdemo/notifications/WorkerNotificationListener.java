@@ -108,7 +108,7 @@ public class WorkerNotificationListener {
                 event.dateTime().format(DATE),
                 event.dateTime().format(TIME),
                 htmlEscape(event.zoneName()),
-                htmlEscape(event.description()));
+                event.description() != null ? htmlEscape(event.description()) : "-");
     }
 
     private void send(Recipient recipient, String subject, String body) {
@@ -116,7 +116,7 @@ public class WorkerNotificationListener {
         try {
             emailService.send(new EmailRequestDTO(recipient.email(), subject, html));
         } catch (EmailDeliveryException ex) {
-            log.debug("Notification to {} not delivered; recorded in email_logs", recipient.email());
+            log.warn("Notification to {} not delivered; recorded in email_logs", recipient.email());
         }
     }
 }
