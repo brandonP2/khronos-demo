@@ -10,7 +10,9 @@ import com.moga.khronosdemo.entities.User;
 import com.moga.khronosdemo.exceptions.BusinessRuleException;
 import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.mappers.UserMapper;
+import com.moga.khronosdemo.repositories.CashClosingRepository;
 import com.moga.khronosdemo.repositories.EstablishmentRepository;
+import com.moga.khronosdemo.repositories.ExpenseRepository;
 import com.moga.khronosdemo.repositories.TimeEntryRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.repositories.WorkerRepository;
@@ -30,16 +32,21 @@ public class UserServiceImpl implements UserService {
     private final WorkerRepository workerRepository;
     private final EstablishmentRepository establishmentRepository;
     private final TimeEntryRepository timeEntryRepository;
+    private final CashClosingRepository cashClosingRepository;
+    private final ExpenseRepository expenseRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
 
     public UserServiceImpl(UserRepository userRepository, WorkerRepository workerRepository,
                            EstablishmentRepository establishmentRepository, TimeEntryRepository timeEntryRepository,
+                           CashClosingRepository cashClosingRepository, ExpenseRepository expenseRepository,
                            UserMapper userMapper, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.workerRepository = workerRepository;
         this.establishmentRepository = establishmentRepository;
         this.timeEntryRepository = timeEntryRepository;
+        this.cashClosingRepository = cashClosingRepository;
+        this.expenseRepository = expenseRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
     }
@@ -135,8 +142,8 @@ public class UserServiceImpl implements UserService {
     }
 
     // Deleting an owner deletes their establishments, and deleting a worker's account deletes the worker,
-    // so neither is allowed while it would take time entries with it. The author of a change can be
-    // deleted: the change keeps their name.
+    // so neither is allowed while it would take time entries with it, nor an owner while it would take
+    // cash closings or expenses. The author of a change can be deleted: the change keeps their name.
     @Override
     public void delete(Long id) {
 
@@ -149,6 +156,11 @@ public class UserServiceImpl implements UserService {
             if (timeEntryRepository.existsByEstablishment_Owner_Id(id)) {
                 throw new BusinessRuleException("Cannot delete an owner whose establishments have time entries;"
                         + " deactivate their workers instead to keep the time entries");
+            }
+            if (cashClosingRepository.existsByEstablishment_Owner_Id(id)
+                    || expenseRepository.existsByEstablishment_Owner_Id(id)) {
+                throw new BusinessRuleException("Cannot delete an owner whose establishments have cash closings or"
+                        + " expenses; keep the owner to keep those financial records");
             }
             establishmentRepository.deleteAll(establishmentRepository.findByOwner_Id(id));
         }
