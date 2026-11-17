@@ -26,4 +26,31 @@ class ApiDocsTests extends IntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/establishments/{id}'].get.parameters[*].name", contains("id")))
                 .andExpect(jsonPath("$.paths['/api/workers/with-user'].post.parameters").doesNotExist());
     }
+
+    @Test
+    void documentsTimeTrackingRatesAndReports() throws Exception {
+        mockMvc.perform(getJson("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/time-entries/clock-in'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/time-entries/clock-out'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/time-entries/me/open'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/time-entries'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/time-entries/{id}'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/time-entries/{id}/void'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/time-entries/{id}/history'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/time-entries/worker/{workerId}'].get.parameters[*].name",
+                        hasItem("includeVoided")))
+                .andExpect(jsonPath("$.paths['/api/time-entries/establishment/{establishmentId}/open'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/workers/{workerId}/rates'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/workers/{workerId}/rates/{rateId}'].delete").exists())
+                .andExpect(jsonPath("$.paths['/api/reports/establishment/{establishmentId}/hours'].get.parameters[*].name",
+                        hasItem("from")))
+                .andExpect(jsonPath("$.paths['/api/reports/worker/{workerId}/days'].get.parameters[*].name",
+                        contains("workerId", "from", "to")))
+                .andExpect(jsonPath("$.paths['/api/reports/establishment/{establishmentId}/hours.csv'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/reports/establishment/{establishmentId}/time-entries.csv'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/reports/worker/{workerId}/time-entries.csv'].get").exists())
+                // The worker clocking in is taken from the token
+                .andExpect(jsonPath("$.paths['/api/time-entries/clock-in'].post.parameters").doesNotExist());
+    }
 }
