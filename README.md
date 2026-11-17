@@ -296,7 +296,7 @@ Cash expenses come out of the till, so while a day's closing is `CLOSED` its cas
 
 `GET /api/reports/establishment/{id}/summary?from&to` (both required, at most 366 days) returns:
 
-- `totals`: `sales`, `cashSales`, `cardSales`, `otherSales` and `tips` from the closings of the range, drafts included; `expenses` (all of them) and `payrollExpenses` (the `PAYROLL` ones); `laborCost`, `laborCostPartial` and `workersWithoutCost` (as `costPartial` and `workersWithoutCost` in the hours report) and `plannedLaborCost`; `grossMargin` and `laborCostSource`; `laborCostPercent`; `cashDifference` (the closings' differences added up); and `closedDays`, `draftDays` and `missingClosingDays`.
+- `totals`: `sales`, `cashSales`, `cardSales`, `otherSales` and `tips` from the closings of the range, drafts included; `expenses` (all of them) and `payrollExpenses` (the `PAYROLL` ones); `laborCost`, `laborCostPartial` and `workersWithoutCost` (as `costPartial` and `workersWithoutCost` in the hours report) and `plannedLaborCost`; `grossMargin` and `laborCostSource`; `laborCostPercent`; `cashDifference` (the differences of the `CLOSED` days added up) and `draftCashDifference` (what the drafts' differences add up to right now; provisional, since a draft's figures still change); and `closedDays`, `draftDays` and `missingClosingDays`.
 - `days`: one row for every day of the range, earliest first, with `sales`, `expenses`, `laborCost`, `margin`, `closingStatus` and `cashDifference` (null without a closing).
 - `expensesByCategory`: the categories with expenses, largest first.
 - `previous`: `sales`, `expenses`, `laborCost`, `grossMargin` and `laborCostSource` of the period of the same length right before `from`.

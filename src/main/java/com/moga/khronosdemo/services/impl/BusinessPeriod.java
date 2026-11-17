@@ -94,7 +94,8 @@ final class BusinessPeriod {
                 margin(sales, expenses, laborCost),
                 laborCostSource(laborCost),
                 laborCostPercent(laborCost, sales),
-                figures.values().stream().map(CashClosing.Figures::difference).reduce(ZERO, BigDecimal::add),
+                cashDifference(true),
+                cashDifference(false),
                 (int) closed,
                 closings.size() - (int) closed,
                 (int) missing);
@@ -156,6 +157,14 @@ final class BusinessPeriod {
     // A closing is only due once the day is over, and only if someone was scheduled or clocked in
     private boolean isMissing(LocalDate day, Set<LocalDate> activeDays) {
         return !closings.containsKey(day) && day.isBefore(today) && activeDays.contains(day);
+    }
+
+    // The differences of the closed days, or of the drafts, added up
+    private BigDecimal cashDifference(boolean closed) {
+        return closings.values().stream()
+                .filter(closing -> closing.isClosed() == closed)
+                .map(closing -> figures.get(closing.getBusinessDate()).difference())
+                .reduce(ZERO, BigDecimal::add);
     }
 
     private BigDecimal sumOfClosings(Function<CashClosing, BigDecimal> amount) {

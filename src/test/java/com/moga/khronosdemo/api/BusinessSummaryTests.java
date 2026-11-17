@@ -142,7 +142,9 @@ class BusinessSummaryTests extends IntegrationTest {
                 .andExpect(jsonPath("$.totals.laborCostSource").value("HOURS"))
                 // 70 / 1800 = 3.89 %
                 .andExpect(jsonPath("$.totals.laborCostPercent").value(3.9))
-                .andExpect(jsonPath("$.totals.cashDifference").value(3.0))
+                // Only Thursday is closed; Friday's +5 is a draft's and may still change
+                .andExpect(jsonPath("$.totals.cashDifference").value(-2.0))
+                .andExpect(jsonPath("$.totals.draftCashDifference").value(5.0))
                 .andExpect(jsonPath("$.totals.closedDays").value(1))
                 .andExpect(jsonPath("$.totals.draftDays").value(1))
                 .andExpect(jsonPath("$.totals.missingClosingDays").value(1))
@@ -249,6 +251,7 @@ class BusinessSummaryTests extends IntegrationTest {
                 .andExpect(jsonPath("$.totals.laborCostPercent").value(nullValue()))
                 .andExpect(jsonPath("$.totals.grossMargin").value(-36.0))
                 .andExpect(jsonPath("$.totals.cashDifference").value(0.0))
+                .andExpect(jsonPath("$.totals.draftCashDifference").value(0.0))
                 .andExpect(jsonPath("$.totals.missingClosingDays").value(1))
                 .andExpect(jsonPath("$.days[*].closingStatus", contains("NONE", "NONE", "MISSING", "NONE", "NONE", "NONE")))
                 .andExpect(jsonPath("$.days[*].laborCost", contains(0.0, 0.0, 36.0, 0.0, 0.0, 0.0)))

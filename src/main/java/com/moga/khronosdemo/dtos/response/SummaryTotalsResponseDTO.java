@@ -30,8 +30,10 @@ public record SummaryTotalsResponseDTO(
         LaborCostSource laborCostSource,
         // laborCost / sales x 100, one decimal; null when sales are 0 or laborCost is unknown
         BigDecimal laborCostPercent,
-        // The differences of the range's closings added up
+        // The differences of the range's CLOSED days added up; drafts can still change, so they are left out
         BigDecimal cashDifference,
+        // The differences the range's drafts show right now, added up: provisional until they are closed
+        BigDecimal draftCashDifference,
         int closedDays,
         int draftDays,
         // Days before today with a shift or a time entry and no closing
