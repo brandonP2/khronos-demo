@@ -140,14 +140,14 @@ class StockLedger {
     }
 
     // The business day asked for, or today when left out. "Today" is the establishment's local date, and
-    // a later day answers 409 with the message given
+    // a later day answers 409 FUTURE_DATE, as for cash closings and expenses, with the message given
     LocalDate businessDay(LocalDate requested, Establishment establishment, String laterThanTodayMessage) {
         LocalDate today = today(establishment);
         if (requested == null) {
             return today;
         }
         if (requested.isAfter(today)) {
-            throw new BusinessRuleException(laterThanTodayMessage);
+            throw new BusinessRuleException(laterThanTodayMessage, ErrorCode.FUTURE_DATE);
         }
         return requested;
     }

@@ -85,7 +85,8 @@ class StockCountTests extends IntegrationTest {
                         { "establishmentId": %d, "date": "2030-05-11", "items": [ { "productId": %d, "countedQuantity": 0 } ] }
                         """.formatted(venue.getId(), tonic)).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("The count date cannot be in the future"));
+                .andExpect(jsonPath("$.message").value("The count date cannot be in the future"))
+                .andExpect(jsonPath("$.code").value("FUTURE_DATE"));
     }
 
     @Test

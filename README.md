@@ -452,7 +452,7 @@ A product has no stock field. The response works out:
 
 - `reason` is required, 3 to 255 characters, for `WASTE` and `ADJUSTMENT`, and optional (at most 255) otherwise.
 - `unitCost` can only be sent with a `PURCHASE`, and then becomes the product's cost. Each movement keeps the cost it is valued at: the purchase's, or the product's at that moment (null if it has none). `value` is `|quantity| × unitCost`.
-- `date` is the business day; it defaults to today in the establishment's time zone and can't be later (**409** `The movement date cannot be in the future`).
+- `date` is the business day; it defaults to today in the establishment's time zone and can't be later (**409** `The movement date cannot be in the future`, `FUTURE_DATE`).
 - The stock may go below zero; that happens when a purchase wasn't entered, and isn't an error.
 - `stockAfter` is the product's stock right after the movement was recorded.
 
@@ -473,7 +473,7 @@ The listing (`GET /api/stock-movements/establishment/{id}?from&to&productId&type
   "items": [ { "productId": 5, "countedQuantity": 8.5 }, { "productId": 6, "countedQuantity": 0 } ] }
 ```
 
-For each product it records a `COUNT` movement with `countedQuantity - currentStock`, also when that is 0, to leave on record that the product was counted, so the stock becomes what was counted. `notes` (at most 255 characters) becomes each movement's `reason`. The answer, **201**, is the movements in the order of the items. It takes 1 to 500 items, each product once (**400** `fieldErrors.items`: `must not contain the same product twice`), every product of that establishment (**409** `Product 'Ron' belongs to another establishment`, `OTHER_ESTABLISHMENT`) and active (**409** `PRODUCT_INACTIVE`). The day works as for movements (**409** `The count date cannot be in the future`). It is all or nothing, in one transaction that locks the products in id order: a movement sent at the same time is either counted against or waits for the count.
+For each product it records a `COUNT` movement with `countedQuantity - currentStock`, also when that is 0, to leave on record that the product was counted, so the stock becomes what was counted. `notes` (at most 255 characters) becomes each movement's `reason`. The answer, **201**, is the movements in the order of the items. It takes 1 to 500 items, each product once (**400** `fieldErrors.items`: `must not contain the same product twice`), every product of that establishment (**409** `Product 'Ron' belongs to another establishment`, `OTHER_ESTABLISHMENT`) and active (**409** `PRODUCT_INACTIVE`). The day works as for movements (**409** `The count date cannot be in the future`, `FUTURE_DATE`). It is all or nothing, in one transaction that locks the products in id order: a movement sent at the same time is either counted against or waits for the count.
 
 ### Purchase orders and receiving
 
@@ -510,7 +510,7 @@ In one transaction it:
 2. makes each cost received the product's `unitCost`;
 3. if `createExpense` is true, creates an [expense](#expenses): category `SUPPLIES`, `date` = the day received, `supplier` = the supplier's name, `description` = `Pedido #<id>`, `amount` = the order's total, and the `paymentMethod` sent.
 
-`receivedDate` defaults to today in the establishment's time zone and can't be later (**409** `The received date cannot be in the future`). A line can be received as 0 (it didn't come), but not all of them (**409** `Nothing was received; cancel the purchase order instead`, `PURCHASE_ORDER_NOTHING_RECEIVED`). A missing line or one of another order answers **400** (`Every line of the purchase order must be sent; line 22 is missing`, `Line 99 is not a line of this purchase order`). With `createExpense` true, `paymentMethod` is required (**400** `fieldErrors.paymentMethod`), and a total that is null or 0 answers **409** `The received purchase order has no total to record as an expense; give its lines a unit cost or receive it without an expense` (`PURCHASE_ORDER_NO_TOTAL`). The expense goes through the same rules as one entered by hand: a cash expense on a day whose cash closing is closed answers that **409** (`The cash closing of 2026-11-20 is closed; ...`), and **nothing at all is received**.
+`receivedDate` defaults to today in the establishment's time zone and can't be later (**409** `The received date cannot be in the future`, `FUTURE_DATE`). A line can be received as 0 (it didn't come), but not all of them (**409** `Nothing was received; cancel the purchase order instead`, `PURCHASE_ORDER_NOTHING_RECEIVED`). A missing line or one of another order answers **400** (`Every line of the purchase order must be sent; line 22 is missing`, `Line 99 is not a line of this purchase order`). With `createExpense` true, `paymentMethod` is required (**400** `fieldErrors.paymentMethod`), and a total that is null or 0 answers **409** `The received purchase order has no total to record as an expense; give its lines a unit cost or receive it without an expense` (`PURCHASE_ORDER_NO_TOTAL`). The expense goes through the same rules as one entered by hand: a cash expense on a day whose cash closing is closed answers that **409** (`The cash closing of 2026-11-20 is closed; ...`), and **nothing at all is received**.
 
 Deleting that expense later (`DELETE /api/expenses/{id}`) keeps the order received with its movements; its `expenseId` becomes null. Editing the expense doesn't change the order.
 
@@ -776,7 +776,7 @@ Every error comes back in the same shape:
 | `DIFFERENCE_REASON_REQUIRED` | 409 | Closing a day whose cash difference is over the threshold without a `differenceReason` |
 | `CASH_NOT_COUNTED` | 409 | Closing a day whose `countedCash` is still `null` |
 | `CASH_DAY_CLOSED` | 409 | Adding, changing, moving or deleting a cash expense of a day whose closing is closed; `details.date` is that day |
-| `FUTURE_DATE` | 409 | A cash closing's `businessDate` or an expense's `date` is after today in the establishment's time zone |
+| `FUTURE_DATE` | 409 | A cash closing's `businessDate`, an expense's `date`, or the `date` of a stock movement or count or the `receivedDate` of a purchase order is after today in the establishment's time zone |
 | `SUPPLIER_NAME_TAKEN` | 409 | Another supplier of the establishment has that name, whatever its case |
 | `SUPPLIER_HAS_ORDERS` | 409 | A supplier with purchase orders can't be deleted |
 | `PRODUCT_NAME_TAKEN` | 409 | Another product of the establishment has that name, whatever its case |

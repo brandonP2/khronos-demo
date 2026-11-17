@@ -199,7 +199,9 @@ class StockMovementTests extends IntegrationTest {
                         { "productId": %d, "type": "PURCHASE", "quantity": 1, "date": "2030-05-12" }
                         """.formatted(rum)).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("The movement date cannot be in the future"));
+                .andExpect(jsonPath("$.message").value("The movement date cannot be in the future"))
+                .andExpect(jsonPath("$.code").value("FUTURE_DATE"))
+                .andExpect(jsonPath("$.details").doesNotExist());
 
         // Still the 10th in the Canaries, an hour behind Madrid
         venue.setTimeZone("Atlantic/Canary");
@@ -209,7 +211,8 @@ class StockMovementTests extends IntegrationTest {
         mockMvc.perform(postJson("/api/stock-movements", """
                         { "productId": %d, "type": "PURCHASE", "quantity": 1, "date": "2030-05-11" }
                         """.formatted(rum)).with(as(owner)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("FUTURE_DATE"));
     }
 
     @Test

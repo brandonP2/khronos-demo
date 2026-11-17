@@ -46,7 +46,10 @@ public enum ErrorCode {
      */
     CASH_DAY_CLOSED,
 
-    /** 409 when a cash closing's business day or an expense's date is after today in the establishment's time zone. */
+    /**
+     * 409 when a cash closing's business day, an expense's date, or the date of a stock movement, a stock
+     * count or a purchase order's receipt is after today in the establishment's time zone.
+     */
     FUTURE_DATE,
 
     /** 409 when another supplier of the establishment already has that name, whatever its case. */

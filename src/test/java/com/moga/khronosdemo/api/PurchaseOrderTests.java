@@ -390,7 +390,10 @@ class PurchaseOrderTests extends IntegrationTest {
         transition(id, "order");
         receive(id, receiptOf(id, "1"), false, null, "2030-05-11")
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("The received date cannot be in the future"));
+                .andExpect(jsonPath("$.message").value("The received date cannot be in the future"))
+                .andExpect(jsonPath("$.code").value("FUTURE_DATE"));
+        // Nothing was received
+        assertEquals(0, stockMovementRepository.count());
         receive(id, receiptOf(id, "1"), false, null, "2030-05-08")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.receivedDate").value("2030-05-08"));
