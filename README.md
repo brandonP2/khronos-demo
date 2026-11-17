@@ -296,9 +296,22 @@ Requests on the same establishment's cash take turns: every change to a closing 
 - `category`: `SUPPLIES` (food and drink stock), `RENT`, `UTILITIES` (electricity, water, gas, internet), `PAYROLL` (wages and social security), `MAINTENANCE`, `MARKETING`, `TAXES`, `OTHER`.
 - `paymentMethod`: `CASH`, `CARD`, `TRANSFER`, `OTHER`.
 - `description` 1 to 150 characters, `supplier` at most 100, `notes` at most 500, `amount` more than 0. The date can't be later than today in the establishment's time zone (**409** `The expense date cannot be in the future`, `code` `FUTURE_DATE`). `establishmentId` is only read on creation.
-- The listing is newest first, then by id, with optional `from`, `to` and `category` filters.
+- The listing is newest first, then by id, with optional `from`, `to` and `category` filters. Like the cash closings' listing, it covers at most 366 days (see [Listing ranges](#listing-ranges)).
 
 Cash expenses come out of the till, so while a day's closing is `CLOSED` its cash expenses can't be added, changed, moved in or out, or deleted: **409** `The cash closing of 2026-11-20 is closed; reopen it to add, change or delete cash expenses of that day`, with `code` `CASH_DAY_CLOSED` and the closed day in `details.date`. An expense counts as cash if it was paid in cash before the change or will be after it. Other payment methods are never locked.
+
+### Listing ranges
+
+`GET /api/cash-closings/establishment/{id}` and `GET /api/expenses/establishment/{id}` take optional `from` and `to` (`YYYY-MM-DD`, both included) but never return more than 366 days, so a listing without dates doesn't bring back the whole history. The answer keeps its shape, a plain list:
+
+| Sent | Range listed |
+|---|---|
+| Neither | The 366 days up to today in the establishment's time zone: `today - 365` to `today` |
+| Only `from` | `from` to `from + 365` |
+| Only `to` | `to - 365` to `to` |
+| Both | `from` to `to`; **400** `The date range cannot be longer than 366 days` if that is more than 366 days, and **400** `'from' must not be after 'to'` as before |
+
+To see older records, send the dates of the range you want. Without dates the establishment has to exist, so an admin gets **404** for an id that doesn't; with dates, such a listing is just empty.
 
 ### Business summary
 
@@ -350,7 +363,7 @@ All of them are for the establishment's owner or an admin; a worker gets **403**
 
 | Method and path | Body | Answer |
 |---|---|---|
-| `GET /api/cash-closings/establishment/{id}?from&to` | | **200** closings, latest day first; `from` and `to` optional |
+| `GET /api/cash-closings/establishment/{id}?from&to` | | **200** closings, latest day first; `from` and `to` optional, at most 366 days (see [Listing ranges](#listing-ranges)) |
 | `GET /api/cash-closings/{id}` | | **200** the closing |
 | `POST /api/cash-closings` | the closing | **201** the closing, `DRAFT` |
 | `PUT /api/cash-closings/{id}` | the closing | **200** the closing |
@@ -358,7 +371,7 @@ All of them are for the establishment's owner or an admin; a worker gets **403**
 | `PUT /api/cash-closings/{id}/reopen` | `{ "reason": "..." }` | **200** the closing, `DRAFT` |
 | `DELETE /api/cash-closings/{id}` | | **204** |
 | `GET /api/cash-closings/{id}/history` | | **200** the changes, oldest first |
-| `GET /api/expenses/establishment/{id}?from&to&category` | | **200** expenses, newest first |
+| `GET /api/expenses/establishment/{id}?from&to&category` | | **200** expenses, newest first; at most 366 days, as for closings |
 | `POST /api/expenses` | the expense | **201** the expense |
 | `PUT /api/expenses/{id}` | the expense | **200** the expense |
 | `DELETE /api/expenses/{id}` | | **204** |

@@ -13,6 +13,7 @@ import com.moga.khronosdemo.exceptions.BusinessRuleException;
 import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.mappers.ExpenseMapper;
 import com.moga.khronosdemo.repositories.CashClosingRepository;
+import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.ExpenseRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.services.ExpenseService;
@@ -39,28 +40,31 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     private final ExpenseRepository expenseRepository;
     private final CashClosingRepository cashClosingRepository;
+    private final EstablishmentRepository establishmentRepository;
     private final UserRepository userRepository;
     private final CashRecordLock cashRecordLock;
     private final ExpenseMapper expenseMapper;
     private final Clock clock;
 
     public ExpenseServiceImpl(ExpenseRepository expenseRepository, CashClosingRepository cashClosingRepository,
-                              UserRepository userRepository, CashRecordLock cashRecordLock,
-                              ExpenseMapper expenseMapper, Clock clock) {
+                              EstablishmentRepository establishmentRepository, UserRepository userRepository,
+                              CashRecordLock cashRecordLock, ExpenseMapper expenseMapper, Clock clock) {
         this.expenseRepository = expenseRepository;
         this.cashClosingRepository = cashClosingRepository;
+        this.establishmentRepository = establishmentRepository;
         this.userRepository = userRepository;
         this.cashRecordLock = cashRecordLock;
         this.expenseMapper = expenseMapper;
         this.clock = clock;
     }
 
-    // Newest first, then by id, newest first too
+    // Newest first, then by id, newest first too, over at most 366 days (see DateRange.capped): without
+    // dates, the last 366 up to today
     @Override
     @Transactional(readOnly = true)
     public List<ExpenseResponseDTO> findByEstablishment(Long establishmentId, LocalDate from, LocalDate to,
                                                        ExpenseCategory category) {
-        DateRange range = new DateRange(from, to);
+        DateRange range = DateRange.capped(from, to, ReportServiceImpl.MAX_DAYS, () -> today(establishmentId));
         return expenseRepository.findByEstablishment(establishmentId, range.from(), range.to(), category).stream()
                 .map(expenseMapper::toResponse)
                 .toList();
@@ -116,9 +120,18 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     // "Today" is the establishment's local date, so a venue in the Canaries can't enter tomorrow's expenses
     private void checkNotInFuture(Establishment establishment, LocalDate date) {
-        if (date.isAfter(LocalDate.ofInstant(clock.instant(), establishment.getZoneId()))) {
+        if (date.isAfter(today(establishment))) {
             throw new BusinessRuleException("The expense date cannot be in the future", ErrorCode.FUTURE_DATE);
         }
+    }
+
+    private LocalDate today(Establishment establishment) {
+        return LocalDate.ofInstant(clock.instant(), establishment.getZoneId());
+    }
+
+    private LocalDate today(Long establishmentId) {
+        return today(establishmentRepository.findById(establishmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Establishment", establishmentId)));
     }
 
     private User getUser(Long id) {

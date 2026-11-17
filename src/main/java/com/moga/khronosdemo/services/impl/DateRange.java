@@ -5,6 +5,7 @@ import com.moga.khronosdemo.exceptions.InvalidRequestException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.function.Supplier;
 
 /**
  * The optional from and to dates of a listing, both inclusive. A missing date leaves that side open.
@@ -27,6 +28,20 @@ record DateRange(LocalDate from, LocalDate to) {
             throw new InvalidRequestException("The date range cannot be longer than " + maxDays + " days");
         }
         return range;
+    }
+
+    /**
+     * Listings that would otherwise return the whole history cover at most maxDays days, counting both
+     * ends, like reports, but the dates stay optional. Without either, the range is the maxDays days up to
+     * today, which is only asked for then. With one, the other is filled in maxDays days away from it.
+     * With both, a longer range answers 400.
+     */
+    static DateRange capped(LocalDate from, LocalDate to, int maxDays, Supplier<LocalDate> today) {
+        LocalDate last = from == null && to == null ? today.get() : to;
+        if (from == null) {
+            return bounded(last.minusDays(maxDays - 1), last, maxDays);
+        }
+        return bounded(from, last != null ? last : from.plusDays(maxDays - 1), maxDays);
     }
 
     LocalDateTime startInclusive() {

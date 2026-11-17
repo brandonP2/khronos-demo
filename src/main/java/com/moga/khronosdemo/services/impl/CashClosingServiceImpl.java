@@ -16,6 +16,7 @@ import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.mappers.CashClosingMapper;
 import com.moga.khronosdemo.repositories.CashClosingChangeRepository;
 import com.moga.khronosdemo.repositories.CashClosingRepository;
+import com.moga.khronosdemo.repositories.EstablishmentRepository;
 import com.moga.khronosdemo.repositories.ExpenseRepository;
 import com.moga.khronosdemo.repositories.UserRepository;
 import com.moga.khronosdemo.services.CashClosingService;
@@ -53,6 +54,7 @@ public class CashClosingServiceImpl implements CashClosingService {
 
     private final CashClosingRepository cashClosingRepository;
     private final CashClosingChangeRepository cashClosingChangeRepository;
+    private final EstablishmentRepository establishmentRepository;
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
     private final CashRecordLock cashRecordLock;
@@ -62,11 +64,12 @@ public class CashClosingServiceImpl implements CashClosingService {
 
     public CashClosingServiceImpl(CashClosingRepository cashClosingRepository,
                                   CashClosingChangeRepository cashClosingChangeRepository,
-                                  ExpenseRepository expenseRepository, UserRepository userRepository,
-                                  CashRecordLock cashRecordLock, CashClosingMapper cashClosingMapper,
-                                  CashClosingProperties properties, Clock clock) {
+                                  EstablishmentRepository establishmentRepository, ExpenseRepository expenseRepository,
+                                  UserRepository userRepository, CashRecordLock cashRecordLock,
+                                  CashClosingMapper cashClosingMapper, CashClosingProperties properties, Clock clock) {
         this.cashClosingRepository = cashClosingRepository;
         this.cashClosingChangeRepository = cashClosingChangeRepository;
+        this.establishmentRepository = establishmentRepository;
         this.expenseRepository = expenseRepository;
         this.userRepository = userRepository;
         this.cashRecordLock = cashRecordLock;
@@ -75,11 +78,12 @@ public class CashClosingServiceImpl implements CashClosingService {
         this.clock = clock;
     }
 
-    // Latest day first. The drafts' cash expenses are added up in one query, whatever the number of days
+    // Latest day first, over at most 366 days (see DateRange.capped): without dates, the last 366 up to today.
+    // The drafts' cash expenses are added up in one query, whatever the number of days
     @Override
     @Transactional(readOnly = true)
     public List<CashClosingResponseDTO> findByEstablishment(Long establishmentId, LocalDate from, LocalDate to) {
-        DateRange range = new DateRange(from, to);
+        DateRange range = DateRange.capped(from, to, ReportServiceImpl.MAX_DAYS, () -> today(establishmentId));
         List<CashClosing> closings = cashClosingRepository.findByEstablishment(establishmentId, range.from(), range.to());
         Map<LocalDate, BigDecimal> cashExpenses = cashExpensesOfDrafts(establishmentId, closings);
         return closings.stream()
@@ -242,6 +246,11 @@ public class CashClosingServiceImpl implements CashClosingService {
     // "Today" is the establishment's local date
     private LocalDate today(Establishment establishment) {
         return LocalDate.ofInstant(clock.instant(), establishment.getZoneId());
+    }
+
+    private LocalDate today(Long establishmentId) {
+        return today(establishmentRepository.findById(establishmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Establishment", establishmentId)));
     }
 
     private User getUser(Long id) {

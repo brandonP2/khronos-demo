@@ -174,6 +174,28 @@ class ExpenseTests extends IntegrationTest {
     }
 
     @Test
+    void aListingCoversAtMost366Days() throws Exception {
+        Long friday = create(venue, "2030-05-10", "CARD", "10");
+        Long firstDay = create(venue, "2029-05-10", "CARD", "20");
+        Long dayBefore = create(venue, "2029-05-09", "CARD", "30");
+        String list = "/api/expenses/establishment/" + venue.getId();
+
+        // Without dates: the 366 days up to today, Friday 10 May 2030 in Madrid
+        mockMvc.perform(getJson(list).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(friday.intValue(), firstDay.intValue())));
+        // With only one date, the other is 365 days away from it
+        mockMvc.perform(getJson(list + "?from=2029-05-09").with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(firstDay.intValue(), dayBefore.intValue())));
+        mockMvc.perform(getJson(list + "?to=2029-05-31&category=SUPPLIES").with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(firstDay.intValue(), dayBefore.intValue())));
+        // Both: at most 366 days, as in the reports
+        mockMvc.perform(getJson(list + "?from=2029-05-09&to=2030-05-10").with(as(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("The date range cannot be longer than 366 days"));
+    }
+
+    @Test
     void deletesAnExpense() throws Exception {
         Long id = create(venue, "2030-05-09", "CARD", "10");
 

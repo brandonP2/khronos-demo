@@ -507,6 +507,41 @@ class CashClosingTests extends IntegrationTest {
                 .andExpect(jsonPath("$.message").value("'from' must not be after 'to'"));
     }
 
+    @Test
+    void aListingCoversAtMost366Days() throws Exception {
+        Long friday = create(venue, FRI, "770.50");
+        Long firstDay = create(venue, "2029-05-10", "770.50");
+        Long dayBefore = create(venue, "2029-05-09", "770.50");
+        String list = "/api/cash-closings/establishment/" + venue.getId();
+
+        // Without dates: the 366 days up to today, Friday 10 May 2030 in Madrid
+        mockMvc.perform(getJson(list).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(friday.intValue(), firstDay.intValue())));
+        // With only one date, the other is 365 days away from it
+        mockMvc.perform(getJson(list + "?from=2029-05-09").with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(firstDay.intValue(), dayBefore.intValue())));
+        mockMvc.perform(getJson(list + "?to=2029-05-31").with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(firstDay.intValue(), dayBefore.intValue())));
+        // Both: at most 366 days, as in the reports
+        mockMvc.perform(getJson(list + "?from=2029-05-10&to=2030-05-10").with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(friday.intValue(), firstDay.intValue())));
+        mockMvc.perform(getJson(list + "?from=2029-05-09&to=2030-05-10").with(as(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("The date range cannot be longer than 366 days"));
+
+        // Today is the venue's: at 23:30 UTC it is already Saturday in Madrid, so 10 May 2029 drops out
+        clock.setNow(Instant.parse("2030-05-10T23:30:00Z"));
+        mockMvc.perform(getJson(list).with(as(owner)))
+                .andExpect(jsonPath("$[*].id", contains(friday.intValue())));
+
+        // An admin listing an establishment that doesn't exist, without dates
+        mockMvc.perform(getJson("/api/cash-closings/establishment/{id}", venue.getId() + 1000)
+                        .with(as(createAdmin("admin"))))
+                .andExpect(status().isNotFound());
+    }
+
     private Long create(Establishment establishment, String date, String countedCash) throws Exception {
         return longAt(mockMvc.perform(postJson("/api/cash-closings", closing(establishment, date, countedCash))
                         .with(as(establishment.getOwner())))
