@@ -1,9 +1,11 @@
 package com.moga.khronosdemo.controllers;
 
+import com.moga.khronosdemo.dtos.response.BusinessSummaryResponseDTO;
 import com.moga.khronosdemo.dtos.response.HoursReportResponseDTO;
 import com.moga.khronosdemo.dtos.response.WorkerDaysReportResponseDTO;
 import com.moga.khronosdemo.entities.enums.Role;
 import com.moga.khronosdemo.security.SecurityUser;
+import com.moga.khronosdemo.services.BusinessSummaryService;
 import com.moga.khronosdemo.services.ReportService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
@@ -22,17 +24,19 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 
 /**
- * Planned against worked hours and staff costs, as JSON or as CSV files to download. from and to are
- * required and cover at most 366 days.
+ * Planned against worked hours and staff costs, and the business summary (sales, expenses, staff cost
+ * and margin), as JSON or as CSV files to download. from and to are required and cover at most 366 days.
  */
 @RestController
 @RequestMapping("/api/reports")
 public class ReportController {
 
     private final ReportService reportService;
+    private final BusinessSummaryService businessSummaryService;
 
-    public ReportController(ReportService reportService) {
+    public ReportController(ReportService reportService, BusinessSummaryService businessSummaryService) {
         this.reportService = reportService;
+        this.businessSummaryService = businessSummaryService;
     }
 
     @GetMapping("/establishment/{establishmentId}/hours")
@@ -80,6 +84,15 @@ public class ReportController {
                                                          @RequestParam(defaultValue = "false") boolean includeVoided) {
         return csv(reportService.timeEntriesCsvByWorker(workerId, from, to, includeVoided),
                 "registro-jornada_" + workerId + "_" + from + "_" + to + ".csv");
+    }
+
+    // Totals, every day of the range and the period of the same length right before it
+    @GetMapping("/establishment/{establishmentId}/summary")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsEstablishment(#establishmentId)")
+    public BusinessSummaryResponseDTO summary(@PathVariable Long establishmentId,
+                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return businessSummaryService.summary(establishmentId, from, to);
     }
 
     private static ResponseEntity<byte[]> csv(byte[] body, String filename) {
