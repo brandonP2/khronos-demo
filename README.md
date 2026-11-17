@@ -438,7 +438,7 @@ A product has no stock field. The response works out:
 
 `PUT /{id}/active` with `{ "active": false }` deactivates a product: it keeps its history but takes no new movements, counts or order lines (**409** `Product 'Ron Barceló' is inactive; activate it first`, `PRODUCT_INACTIVE`), and listings leave it out unless `includeInactive=true`. A product can only be deleted while nothing was recorded or ordered for it; otherwise **409** `Cannot delete a product that has stock movements or purchase order lines; deactivate it instead (PUT /api/products/{id}/active) to keep its history` (`PRODUCT_HAS_HISTORY`). Listings are by category, in the order above, then by name.
 
-**How the stock is worked out.** The stock is never stored: every listing adds up the movements of all the establishment's products in one grouped query, so it runs the same two queries however many products and movements there are. Keeping a running total on the product row would save that sum, but it would be a second copy of the truth that has to be kept right on every path; with the ledger as the only source, there is nothing to drift. If the sums ever became slow, a total maintained in the same transaction and under the same lock as each movement would be the next step.
+**How the stock is worked out.** The stock is never stored: every listing adds up the movements of all the establishment's products in one grouped query, so it runs the same two queries however many products and movements there are. That query reads only an index on `(establishment_id, product_id)` that includes `quantity` (`V15`), without visiting the movements' rows, but it still adds up the whole history, so its cost grows with the number of movements: this is a known limit. Keeping a running total on the product row would save that sum, but it would be a second copy of the truth that has to be kept right on every path; with the ledger as the only source, there is nothing to drift. If the sums ever became slow, a total maintained in the same transaction and under the same lock as each movement would be the next step.
 
 ### Stock movements, and why they are never edited
 
@@ -843,7 +843,8 @@ Flyway owns the schema. The scripts are in `src/main/resources/db/migration` and
 - `V9` and `V10` add expenses, and cash closings with their history and its append-only trigger. They only add sequences, tables, indexes, a function and a trigger, so they run on a database that already has data.
 - `V11` lets a draft cash closing be saved before its cash is counted: `counted_cash` becomes nullable in `cash_closings`, and `counted_cash` and `difference` in their history. It only drops `NOT NULL` and adds checks that every existing row already meets (a closed day has counted cash; in the history both are null or neither is), so it runs on a database that already has data.
 - `V12` to `V14` add the inventory: suppliers; products and stock movements with their append-only trigger; purchase orders with their lines, and the link from a movement to its order. They only add sequences, tables, indexes, a function, a trigger and one nullable column, so they run on a database that already has data.
-- Any schema change goes in a new script, `V15__what_it_does.sql`, `V16__...`. Never edit a script that has already run anywhere.
+- `V15` adds an index on `stock_movements (establishment_id, product_id) include (quantity)`, so the stock of an establishment's products is added up from the index alone. It only adds an index, so it runs on a database that already has data; writes to `stock_movements` wait while it is built.
+- Any schema change goes in a new script, `V16__what_it_does.sql`, `V17__...`. Never edit a script that has already run anywhere.
 
 ### Tests
 

@@ -13,7 +13,8 @@ import java.util.List;
 
 public interface StockMovementRepository extends JpaRepository<StockMovement, Long> {
 
-    // The stock of each of the establishment's products that has movements, in one query
+    // The stock of each of the establishment's products that has movements, in one query that reads only
+    // the index on (establishment_id, product_id) including quantity (V15)
     @Query("""
             select m.product.id as productId, sum(m.quantity) as stock from StockMovement m
             where m.establishment.id = :establishmentId

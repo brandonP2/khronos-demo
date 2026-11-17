@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.List;
@@ -35,6 +37,9 @@ class ProductTests extends IntegrationTest {
 
     @Autowired
     private EntityManagerFactory entityManagerFactory;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private User owner;
     private Establishment venue;
@@ -361,6 +366,38 @@ class ProductTests extends IntegrationTest {
 
         assertTrue(few > 0, "statistics must be enabled in the test profile");
         assertEquals(few, many);
+    }
+
+    @Test
+    void theStockOfAnEstablishmentIsAddedUpFromAnIndexAlone() throws Exception {
+        Long rum = product(venue, "Ron", "SPIRITS", "BOTTLE", null, null);
+        Establishment otherVenue = createEstablishment(owner);
+        Long gin = product(otherVenue, "Ginebra", "SPIRITS", "BOTTLE", null, null);
+        // 2000 movements of two venues, written straight to the ledger; vacuum marks their pages visible
+        jdbcTemplate.update("""
+                insert into stock_movements (id, establishment_id, product_id, type, quantity, date, stock_after,
+                                             created_at, created_by_name)
+                select -n, case when n % 2 = 0 then ? else ? end, case when n % 2 = 0 then ? else ? end,
+                       'PURCHASE', 1, date '2030-05-01', 0, now(), 'Seed'
+                from generate_series(1, 2000) n
+                """, venue.getId(), otherVenue.getId(), rum, gin);
+        jdbcTemplate.execute("vacuum analyze stock_movements");
+
+        // The query StockMovementRepository.sumByEstablishment runs, planned as for a table too large to
+        // read whole: it reads the V15 index alone, already in product order
+        String plan = new TransactionTemplate(transactionManager).execute(status -> {
+            jdbcTemplate.execute("set local enable_seqscan = off");
+            jdbcTemplate.execute("set local enable_bitmapscan = off");
+            return String.join("\n", jdbcTemplate.queryForList("""
+                    explain select m.product_id, sum(m.quantity) from stock_movements m
+                    where m.establishment_id = %d group by m.product_id
+                    """.formatted(venue.getId()), String.class));
+        });
+        assertTrue(plan.contains("Index Only Scan using idx_stock_movements_establishment_product"), plan);
+        assertEquals("CREATE INDEX idx_stock_movements_establishment_product ON public.stock_movements USING btree"
+                + " (establishment_id, product_id) INCLUDE (quantity)", jdbcTemplate.queryForObject("""
+                select indexdef from pg_indexes where indexname = 'idx_stock_movements_establishment_product'
+                """, String.class));
     }
 
     private long listingStatements() throws Exception {

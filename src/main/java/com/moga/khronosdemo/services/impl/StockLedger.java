@@ -114,7 +114,9 @@ class StockLedger {
         return stockOf(List.of(productId)).get(productId);
     }
 
-    // The stock of every product of the establishment; a product missing from the map has none
+    // The stock of every product of the establishment; a product missing from the map has none. It adds up
+    // the establishment's whole history, from an index (V15), so its cost grows with the history: see the
+    // known limit there
     Map<Long, BigDecimal> stockOfEstablishment(Long establishmentId) {
         return stockMovementRepository.sumByEstablishment(establishmentId).stream()
                 .collect(Collectors.toMap(StockMovementRepository.ProductStock::getProductId,
