@@ -21,9 +21,12 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -96,6 +99,29 @@ class StockLedger {
 
     Product lock(Long productId) {
         return lock(List.of(productId)).get(0);
+    }
+
+    /**
+     * Locks the products as lock does, in id order, and checks each one is the establishment's own and
+     * active, so it can take a new movement, count or purchase order line. Purchase orders and stock counts
+     * take their products through it.
+     *
+     * @return the products by id, in id order
+     * @throws ResourceNotFoundException for the first product that doesn't exist
+     * @throws BusinessRuleException     409 OTHER_ESTABLISHMENT or PRODUCT_INACTIVE for the first product,
+     *                                   in id order, that is of another establishment or inactive
+     */
+    Map<Long, Product> lockActive(Establishment establishment, Collection<Long> productIds) {
+        List<Product> products = lock(productIds);
+        for (Product product : products) {
+            if (!Objects.equals(product.getEstablishment().getId(), establishment.getId())) {
+                throw new BusinessRuleException("Product '" + product.getName() + "' belongs to another establishment",
+                        ErrorCode.OTHER_ESTABLISHMENT);
+            }
+            checkActive(product);
+        }
+        return products.stream().collect(Collectors.toMap(Product::getId, Function.identity(),
+                (first, second) -> first, LinkedHashMap::new));
     }
 
     // Each product's stock now, 0 for those without movements

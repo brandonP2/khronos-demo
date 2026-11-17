@@ -17,8 +17,9 @@ import java.util.function.Function;
  * services lock in the same way: the establishment's row first (EstablishmentRepository.lockById), and
  * only then the closing or expense, read after the lock so the checks that follow see whatever an earlier
  * request committed. That is what keeps two closings of one day from both being created, and a cash
- * expense from slipping into a day while it is being closed. It runs inside the caller's transaction,
- * which holds the lock until it ends.
+ * expense from slipping into a day while it is being closed. Receiving a purchase order, which may create
+ * an expense, takes the establishment's lock here too, before the order's and its products' (see
+ * StockLedger). It runs inside the caller's transaction, which holds the lock until it ends.
  */
 @Component
 class CashRecordLock {

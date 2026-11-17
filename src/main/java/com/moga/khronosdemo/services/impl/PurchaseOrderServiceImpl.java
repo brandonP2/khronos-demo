@@ -62,8 +62,9 @@ import java.util.stream.Collectors;
  * is received.
  * <p>
  * Every change locks the order's row first, so two changes to one order take turns, and then its
- * products in id order. Receiving locks the establishment before both, since the expense it may create
- * needs that lock and the lock order is establishment, order, products (see StockLedger).
+ * products in id order, checked through StockLedger.lockActive. Receiving locks the establishment before
+ * both, through CashRecordLock as cash closings and expenses do, since the expense it may create needs that
+ * lock and the lock order is establishment, order, products (see StockLedger).
  * <p>
  * Deleting the expense later (DELETE /api/expenses/{id}) keeps the order received with its movements;
  * the database only clears its expense_id. Editing it is refused (see ExpenseServiceImpl), so while it is
@@ -81,6 +82,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
     private final ExpenseService expenseService;
+    private final CashRecordLock cashRecordLock;
     private final StockLedger stockLedger;
     private final PurchaseOrderMapper purchaseOrderMapper;
 
@@ -88,14 +90,15 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                                     SupplierRepository supplierRepository,
                                     EstablishmentRepository establishmentRepository,
                                     ExpenseRepository expenseRepository, UserRepository userRepository,
-                                    ExpenseService expenseService, StockLedger stockLedger,
-                                    PurchaseOrderMapper purchaseOrderMapper) {
+                                    ExpenseService expenseService, CashRecordLock cashRecordLock,
+                                    StockLedger stockLedger, PurchaseOrderMapper purchaseOrderMapper) {
         this.purchaseOrderRepository = purchaseOrderRepository;
         this.supplierRepository = supplierRepository;
         this.establishmentRepository = establishmentRepository;
         this.expenseRepository = expenseRepository;
         this.userRepository = userRepository;
         this.expenseService = expenseService;
+        this.cashRecordLock = cashRecordLock;
         this.stockLedger = stockLedger;
         this.purchaseOrderMapper = purchaseOrderMapper;
     }
@@ -133,7 +136,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         Establishment establishment = establishmentRepository.findById(request.establishmentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Establishment", request.establishmentId()));
         Supplier supplier = supplierOf(establishment, request.supplierId());
-        Map<Long, Product> products = lockProducts(establishment, request.lines().stream()
+        Map<Long, Product> products = stockLedger.lockActive(establishment, request.lines().stream()
                 .map(PurchaseOrderLineRequestDTO::productId).toList());
 
         PurchaseOrder order = new PurchaseOrder(establishment, getUser(actorId), stockLedger.auditNow());
@@ -149,7 +152,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         requireStatus(order, "Only a draft purchase order can be edited", PurchaseOrderStatus.DRAFT);
         Establishment establishment = order.getEstablishment();
         Supplier supplier = supplierOf(establishment, request.supplierId());
-        Map<Long, Product> products = lockProducts(establishment, request.lines().stream()
+        Map<Long, Product> products = stockLedger.lockActive(establishment, request.lines().stream()
                 .map(PurchaseOrderLineRequestDTO::productId).toList());
 
         // The old lines go before the new ones are added, so a product kept on the order never has two lines
@@ -172,8 +175,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     public PurchaseOrderResponseDTO order(Long id) {
         PurchaseOrder order = lock(id);
         requireStatus(order, "Only a draft purchase order can be ordered", PurchaseOrderStatus.DRAFT);
-        lockProducts(order.getEstablishment(), productIds(order.getLines())).values()
-                .forEach(StockLedger::checkActive);
+        stockLedger.lockActive(order.getEstablishment(), productIds(order.getLines()));
         order.setStatus(PurchaseOrderStatus.ORDERED);
         order.setOrderDate(stockLedger.today(order.getEstablishment()));
         return response(id);
@@ -193,8 +195,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         // Lock order: establishment, order, products (see StockLedger)
         Long establishmentId = purchaseOrderRepository.findEstablishmentIdById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("PurchaseOrder", id));
-        Establishment establishment = establishmentRepository.lockById(establishmentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Establishment", establishmentId));
+        Establishment establishment = cashRecordLock.lockEstablishment(establishmentId);
         PurchaseOrder order = lock(id);
         requireStatus(order, "Only an ordered purchase order can be received", PurchaseOrderStatus.ORDERED);
         LocalDate receivedDate = stockLedger.businessDay(request.receivedDate(), establishment,
@@ -209,8 +210,8 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             throw new BusinessRuleException("Nothing was received; cancel the purchase order instead",
                     ErrorCode.PURCHASE_ORDER_NOTHING_RECEIVED);
         }
-        Map<Long, Product> products = lockProducts(establishment, productIds(arrived));
-        products.values().forEach(StockLedger::checkActive);
+        // Only the products that came in must still be active
+        Map<Long, Product> products = stockLedger.lockActive(establishment, productIds(arrived));
 
         for (PurchaseOrderLine line : order.getLines()) {
             PurchaseOrderReceiveLineRequestDTO receipt = received.get(line.getId());
@@ -322,20 +323,6 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                     line.quantity().setScale(3, RoundingMode.UNNECESSARY),
                     line.unitCost() != null ? line.unitCost().setScale(2, RoundingMode.UNNECESSARY) : null));
         }
-    }
-
-    // Locks the products in id order and checks they are the establishment's own and active
-    private Map<Long, Product> lockProducts(Establishment establishment, List<Long> productIds) {
-        Map<Long, Product> products = stockLedger.lock(productIds).stream()
-                .collect(Collectors.toMap(Product::getId, Function.identity()));
-        for (Product product : products.values()) {
-            if (!Objects.equals(product.getEstablishment().getId(), establishment.getId())) {
-                throw new BusinessRuleException("Product '" + product.getName() + "' belongs to another establishment",
-                        ErrorCode.OTHER_ESTABLISHMENT);
-            }
-            StockLedger.checkActive(product);
-        }
-        return products;
     }
 
     private Supplier supplierOf(Establishment establishment, Long supplierId) {
