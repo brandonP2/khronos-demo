@@ -4,6 +4,8 @@ Khronos is a REST API for scheduling staff at venues such as restaurants, hotels
 
 The API stops scheduling mistakes before they are saved. For example, it won't let a worker have two overlapping shifts, and it won't assign a worker to an event that their shift doesn't cover.
 
+Besides what was planned, Khronos records what actually happened: workers clock in and out, owners correct the record with a reason that is kept, and reports compare planned and worked hours, lateness and staff cost per person, with CSV exports.
+
 ## Tech stack
 
 | | |
@@ -28,22 +30,25 @@ The API stops scheduling mistakes before they are saved. For example, it won't l
 | Entity | What it represents |
 |---|---|
 | **User** | An account that can log in. It has a username, password, name, email, optional phone number, a **role** and who created it. |
-| **Establishment** | A venue, with a name and a unique address. Each one belongs to one user with the `OWNER` role. |
+| **Establishment** | A venue, with a name, a unique address and a time zone (`Europe/Madrid` by default). Each one belongs to one user with the `OWNER` role. |
 | **Zone** | An area inside an establishment. Zone names are unique within their establishment. |
 | **Worker** | A user with the `WORKER` role who works at one establishment. The worker shares its ID with its user, and it can be marked active or inactive. |
-| **WorkerShift** | A block of time a worker spends in a zone: a date, a start time and an end time. |
+| **WorkerShift** | A block of time a worker spends in a zone: a date, a start time and an end time. It can run past midnight. |
 | **Event** | Something scheduled in a zone at a specific date and time, with a title, an expected number of people and a description. |
 | **WorkerEvent** | The assignment of a worker to an event. |
+| **WorkerRate** | What a worker costs per hour, in euros, from a given day. |
+| **TimeEntry** | A clock-in and its clock-out, as recorded. Never deleted through the API, only corrected or voided. |
+| **TimeEntryChange** | One row of a time entry's history: who did what, when, why, and the times it left. Rows are never changed. |
 
-Deleting a parent also deletes everything under it. For example, deleting an establishment removes its zones, workers, shifts and events.
+Deleting a parent also deletes everything under it. For example, deleting an establishment removes its zones, workers, shifts and events. Time entries are the exception for shifts: see [What deleting does to time entries](#what-deleting-does-to-time-entries).
 
 ## Roles and permissions
 
 | Role | What they can do |
 |---|---|
 | `PLATFORM_ADMIN` | Everything. This is the only role that creates users of any role and creates or deletes establishments. |
-| `OWNER` | Manages their own establishments: edits them and manages their zones, workers, shifts, events and assignments. They can create users with the `WORKER` role, link to their establishments only the accounts they created, and reset their workers' passwords. |
-| `WORKER` | Can read their own profile, shifts and event assignments, and see the zones and events of the establishment they work at and who is assigned to each event. Listing the establishment's assignments gives them only their own. They see who the owner is but not the owner's email or phone. They can change their own password. |
+| `OWNER` | Manages their own establishments: edits them and manages their zones, workers, shifts, events and assignments. They can create users with the `WORKER` role, link to their establishments only the accounts they created, and reset their workers' passwords. They enter, correct and void their workers' time entries, set their hourly rates and read the reports and CSV exports of their establishments. |
+| `WORKER` | Can read their own profile, shifts and event assignments, and see the zones and events of the establishment they work at and who is assigned to each event. Listing the establishment's assignments gives them only their own. They see who the owner is but not the owner's email or phone. They can change their own password. They clock themselves in and out, and read their own time entries, their history, their daily report and its CSV. They never see hourly rates or costs, not even their own. |
 
 Each endpoint checks access with `@PreAuthorize` rules backed by `AccessGuard`. A request for data that belongs to another owner returns **403**.
 
@@ -108,13 +113,14 @@ These rules are enforced in the service layer. Breaking one returns **409 Confli
 **Workers**
 - Only users with the `WORKER` role can be registered as workers, and each user only once.
 - An owner can only link an account they created themselves; otherwise the request gets **403**. Accounts created before this rule existed have no recorded creator, so only a platform admin can link them.
-- A worker can't move to another establishment while they still have shifts or events.
+- A worker can't move to another establishment while they still have shifts, events or time entries.
 - An inactive worker can't sign in, get new shifts or be assigned to events.
 
 **Shifts**
-- The end time must be after the start time, so a shift can't run past midnight.
+- A shift whose end time is not after its start time ends on the next day: 18:00 to 02:00 is an 8-hour night shift. See [Night shifts and the business day](#night-shifts-and-the-business-day).
+- A shift can't start and end at the same time, and can't last more than 16 hours.
 - The zone must belong to the worker's establishment.
-- A worker's shifts can't overlap on the same day. This also holds when two requests arrive at the same time: changes to the same worker's schedule take turns, so the second one sees the first.
+- A worker's shifts can't overlap, including shifts on neighbouring days: a Friday shift from 18:00 to 02:00 clashes with a Saturday shift from 01:00. This also holds when two requests arrive at the same time: changes to the same worker's schedule take turns, so the second one sees the first.
 - Shifts are created **in batches**: `POST /api/worker-shifts` takes a list. The whole batch is saved in a single transaction, so if any shift is invalid, none of them are saved. The error says which shift failed, for example `Shift [1]: ...`. The list is also checked against itself, so two shifts in the same request can't overlap.
 
 **Events and assignments**
@@ -123,8 +129,93 @@ These rules are enforced in the service layer. Breaking one returns **409 Confli
 - An event with workers assigned to it can't be moved to another establishment.
 - Assignments are created **in batches**: `POST /api/worker-events` takes a list, so an owner can assign one worker to several events (or several workers at once) in one request. As with shifts, it's all or nothing, and the error names the failing item, for example `Assignment [2]: ...`.
 - A worker can only be assigned to an event once, including twice in the same batch.
-- A worker can only be assigned to an event in their own establishment, and only if one of their shifts covers it: the shift must be in the event's zone, on the event's date, and running at the event's start time.
+- A worker can only be assigned to an event in their own establishment, and only if one of their shifts covers it: the shift must be in the event's zone and running at the event's start time. A night shift that started the day before counts, so a Friday shift from 18:00 to 02:00 covers an event at 01:00 on Saturday.
 - If a worker's shift is edited or deleted and it no longer covers an event they are assigned to, they are unassigned from that event automatically. The same happens when an event is moved to a time or zone that the worker's shifts don't cover.
+
+## Time tracking
+
+Shifts say what was planned; time entries say what happened. This part of the API records clock-ins and clock-outs, keeps every correction, and compares planned and worked hours. It does not use location or biometrics.
+
+### Time zone
+
+Each establishment has an IANA time zone, `timeZone`, such as `Europe/Madrid` (the default) or `Atlantic/Canary`. It is optional when creating an establishment, and an update without it keeps the current one. A value that is not a region id (for example `+02:00` or a typo) answers **400** with `fieldErrors.timeZone`.
+
+Clock-ins and clock-outs are stored as UTC instants and returned as ISO-8601 with `Z`, for example `2026-11-20T17:02:00Z`. The establishment's time zone turns them into local dates and times: the business day of an entry, lateness in the reports, and the dates and times in the CSV files.
+
+### Night shifts and the business day
+
+The shift request did not change: `{ workerId, zoneId, date, startTime, endTime }`. `date` is the **business day**, the day the shift starts. When `endTime` is not after `startTime` the shift ends the next day, so `{ "date": "2026-11-20", "startTime": "18:00", "endTime": "02:00" }` runs until 02:00 on the 21st. Shift responses add `endsNextDay` (true for that shift) and `durationMinutes` (480). Emails show such a shift as `18:00 - 02:00 (+1)`.
+
+- A shift can't last zero minutes or more than 16 hours (**409**).
+- Overlaps and event coverage compare the real interval, so shifts and events on neighbouring days are checked against each other.
+- The `from` and `to` filters of the shift listings still apply to `date`.
+- `durationMinutes` is wall-clock time. On the two nights a year when the clocks change, the real length of a shift that crosses the change differs by an hour.
+
+PostgreSQL keeps each shift's interval in two generated columns, `starts_at` and `ends_at`. Overlaps are prevented by the service under the per-worker lock, not by a database constraint (see [Known limits](#known-limits)).
+
+### Clocking in and out
+
+A worker clocks in with `POST /api/time-entries/clock-in` and out with `POST /api/time-entries/clock-out`. The server's clock sets the time; the client can't send one. A worker can have only one open entry: the requests for one worker take turns, and a partial unique index in the database backs that up.
+
+When a worker clocks in (or an owner enters or corrects an entry), the entry is matched to the worker's shift that is running at the clock-in or starts within the next 3 hours. It then gets that shift's `shiftId` and counts for its date: a clock-in at 00:30 on Saturday during a Friday 18:00-02:00 shift belongs to Friday. With no such shift, `shiftId` is null and the business day is the local date of the clock-in.
+
+Each entry has a `status`: `OPEN` (no clock-out yet), `CLOSED` or `VOIDED`. `workedMinutes` is the whole minutes between clock-in and clock-out minus `breakMinutes`, and null while open. `isStale` is true when an entry has been open for more than 16 hours, which usually means a forgotten clock-out. A worker can't close an entry that has been open for more than 24 hours; an owner has to correct it.
+
+| Request | When it answers 409 |
+|---|---|
+| Clock in | `You already have an open time entry`, `Worker is not active` (an inactive worker can't sign in, so in practice they get 401), `The time entry overlaps another time entry of this worker` |
+| Clock out | `You have no open time entry`, `This time entry has been open for more than 24 hours; ask a manager to correct it`, `The break cannot be longer than the time between clock-in and clock-out` |
+
+### Corrections and history
+
+The establishment's owner or an admin can:
+
+- enter an entry for a worker with `POST /api/time-entries`: without `clockOut` it clocks them in now, with it it records a past shift (`source` is `MANAGER`);
+- correct an entry with `PUT /api/time-entries/{id}`, which sets `isEdited` and matches it to a shift again;
+- void it with `PUT /api/time-entries/{id}/void`. A voided entry stays, but listings leave it out unless `includeVoided=true`, and reports never count it.
+
+Each of these needs a `reason` of 3 to 255 characters. Entries are never deleted through the API. Every creation, clock-out, correction and void adds a row to the entry's history (`GET /api/time-entries/{id}/history`, oldest first) with the action, who did it, when, the reason, and the clock-in, clock-out and break the entry had right after. History rows can't be changed: a database trigger rejects updates.
+
+Manual entries and corrections answer **409** with one of: `Clock-in cannot be in the future`, `Clock-out cannot be in the future` (both allow one minute of clock difference), `Clock-out must be after clock-in`, `A time entry cannot last more than 24 hours`, `The break cannot be longer than the time between clock-in and clock-out`, `The time entry overlaps another time entry of this worker` (voided entries don't count), `A voided time entry cannot be corrected` and `The time entry is already voided`. An owner can enter past days for an inactive worker.
+
+### What deleting does to time entries
+
+- **A shift**: its entries stay. They lose the link (`shiftId` becomes null) and keep their business day. Editing a shift so that an entry no longer fits it (another worker, or a clock-in outside the new window) unlinks that entry the same way; entries that still fit follow the shift's date.
+- **A worker, or an establishment** (which deletes its workers): their entries, the entries' history and the worker's rates are deleted with them. Only a platform admin can do either. **To keep a worker's records, deactivate them** (`PUT /api/workers/{id}/active`) instead of deleting them.
+- **The account that made a change**: the change stays, with the author's name; only the link to the account is cleared.
+
+### Hourly rates
+
+A rate is what a worker costs per hour, in euros, from `effectiveFrom` on. A past rate is never edited: a pay change is a new rate from a later day, and a second rate for the same day answers **409** `The worker already has a rate effective from 2026-11-01`. The rate for a day is the one with the latest `effectiveFrom` on or before it. Only the worker's owner or an admin can read or change rates.
+
+### Reports
+
+Both reports need `from` and `to` (`YYYY-MM-DD`, both included) and cover at most 366 days. A missing date, `from` after `to`, or a longer range answers **400**.
+
+- `GET /api/reports/establishment/{id}/hours` gives one row per worker: planned minutes (the shifts dated in the range), worked minutes (closed, not voided entries whose business day is in the range), the difference, the number of shifts and entries, late clock-ins (an entry matched to a shift that clocked in more than 10 minutes after it started), missed shifts (ended with no entry matched to them), entries without a shift, open entries, the rate in force today, and the planned and actual cost. Totals add up every row. Inactive workers only appear when they have something in the range.
+- `GET /api/reports/worker/{id}/days` lists each day with a shift or an entry, with its shifts and entries and a `status`, taking the first that applies: `OPEN` (an entry is still open), `MISSED` (a shift has ended and there is no entry), `UPCOMING` (a shift hasn't ended and there is no entry), `UNPLANNED` (entries but no shift), `LATE` (an entry matched to a shift clocked in late), otherwise `OK`. A worker can read their own, without costs.
+
+A cost is each day's minutes times the rate in force that day, in euros rounded to cents. It is null when the worker has no rate for some of those minutes, because a partial sum would understate it. Totals add up the known costs. Each report runs the same few queries however many workers and days it covers.
+
+### CSV exports
+
+`hours.csv` has the columns of the hours report, one row per worker. `time-entries.csv` is the time-tracking record: one row per entry with the person, business day, clock-in, clock-out, break, hours worked, who entered it, whether it was corrected and its status; it leaves out voided entries unless `includeVoided=true`.
+
+The files open directly in a spreadsheet set to Spanish: UTF-8 with a byte order mark, `;` between cells, Spanish headers, dates as `dd/MM/yyyy`, times in the establishment's time zone and amounts with a decimal comma. A cell typed by a user that starts with `=`, `+`, `-` or `@` gets a leading `'`, so a spreadsheet won't run it as a formula.
+
+### Settings
+
+| Setting | Environment variable | Default |
+|---|---|---|
+| A clock-in later than this after the shift starts is late | `LATE_THRESHOLD` | `PT10M` |
+| A clock-in up to this long before a shift starts is matched to it | `SHIFT_MATCH_WINDOW` | `PT3H` |
+| An entry open longer than this is stale | `STALE_ENTRY_AFTER` | `PT16H` |
+
+### Known limits
+
+- The database doesn't stop overlapping shifts by itself. An exclusion constraint on `(worker_id, tsrange(starts_at, ends_at))` would, but adding it would make the migration fail on a database that already holds overlapping shifts written before the per-worker lock existed. The service check under that lock covers every request that goes through the API.
+- Deleting a worker or an establishment deletes their time entries (see above).
+- This is a record of what workers and owners entered. It is not certified as meeting any particular legal requirement for working-time records.
 
 ## Email notifications
 
@@ -132,7 +223,7 @@ Workers get an email through [Resend](https://resend.com) whenever their schedul
 
 | Trigger | Email |
 |---|---|
-| A shift is created for them (one per shift in a batch) | New shift |
+| A shift is created for them (one per shift in a batch) | New shift. A night shift shows its end as `02:00 (+1)` |
 | One of their shifts is edited | Shift changed, showing before and after |
 | One of their shifts is deleted, or moved to another worker | Shift cancelled |
 | They are assigned to an event (one per assignment in a batch) | Assigned to event |
@@ -157,11 +248,14 @@ All endpoints are under `/api` and need a bearer token, except `POST /api/auth/l
 | Worker shifts | `/api/worker-shifts` | `POST` takes a **list**. You can list shifts by owner, worker or zone. |
 | Events | `/api/events` | `POST` takes a **list**. You can list events by zone or establishment. |
 | Worker events | `/api/worker-events` | `POST` takes a **list** of worker/event pairs. You can list assignments by worker, event or establishment. |
+| Time entries | `/api/time-entries` | Workers clock in and out; owners enter, correct and void entries. See below. |
+| Rates | `/api/workers/{workerId}/rates` | A worker's hourly rates. Owners and admins only. |
+| Reports | `/api/reports` | Hours, lateness and costs, as JSON or CSV. |
 | Health | `/actuator/health` | Public. Answers `{"status":"UP"}` without details, or 503 if the database is down. |
 
 **Date filters.** Every listing of shifts (by owner, worker or zone), events (by zone or establishment) and assignments by establishment accepts optional `from` and `to` query parameters, as `YYYY-MM-DD`, both inclusive. Events and assignments are filtered by the event's date. Without them the whole list comes back. For example `GET /api/worker-shifts/owner/3?from=2026-11-01&to=2026-11-30`. `from` after `to` answers **400**.
 
-### Endpoints added in this version
+### Endpoints added in the previous version
 
 | Method and path | Body | Answer | Who |
 |---|---|---|---|
@@ -172,6 +266,44 @@ All endpoints are under `/api` and need a bearer token, except `POST /api/auth/l
 | `GET /api/users/establishment/{id}` | | **200** list of users | The owner or an admin |
 
 `DELETE /api/workers/deactivate/{id}` still works but is deprecated: it toggles the flag, so a retried request undoes itself. Use `PUT /api/workers/{id}/active`.
+
+### Time tracking, rates and reports endpoints
+
+"Owner" means the owner of the establishment the data belongs to. Admins can call all of these except the three that only workers use.
+
+| Method and path | Body | Answer | Who |
+|---|---|---|---|
+| `POST /api/time-entries/clock-in` | `{ "note": "..." }`, optional, at most 255 characters | **201** the entry | A worker, for themselves |
+| `POST /api/time-entries/clock-out` | `{ "breakMinutes": 30, "note": "..." }`, both optional; `breakMinutes` 0 to 600 | **200** the entry | A worker, for themselves |
+| `GET /api/time-entries/me/open` | | **200** the open entry, or **204** if there is none | A worker |
+| `POST /api/time-entries` | `{ "workerId": 5, "clockIn": "2026-11-20T17:00:00Z", "clockOut": null, "breakMinutes": 0, "reason": "..." }` | **201** the entry, with `source` `MANAGER` | The owner or an admin |
+| `PUT /api/time-entries/{id}` | `{ "clockIn": "...", "clockOut": "..." or null, "breakMinutes": 0, "reason": "..." }` | **200** the entry, `isEdited` true | The owner or an admin |
+| `PUT /api/time-entries/{id}/void` | `{ "reason": "..." }` | **200** the entry, `status` `VOIDED` | The owner or an admin |
+| `GET /api/time-entries/{id}/history` | | **200** the changes, oldest first | The owner, an admin or the entry's worker |
+| `GET /api/time-entries/worker/{workerId}?from&to&includeVoided` | | **200** entries by clock-in | The owner, an admin or the worker |
+| `GET /api/time-entries/establishment/{id}?from&to&includeVoided` | | **200** entries by clock-in | The owner or an admin |
+| `GET /api/time-entries/establishment/{id}/open` | | **200** the entries open right now | The owner or an admin |
+| `GET /api/workers/{workerId}/rates` | | **200** rates, the latest `effectiveFrom` first | The owner or an admin |
+| `POST /api/workers/{workerId}/rates` | `{ "hourlyRate": 12.50, "effectiveFrom": "2026-11-01" }` | **201** the rate | The owner or an admin |
+| `DELETE /api/workers/{workerId}/rates/{rateId}` | | **204** | The owner or an admin |
+| `GET /api/reports/establishment/{id}/hours?from&to` | | **200** the hours report | The owner or an admin |
+| `GET /api/reports/worker/{workerId}/days?from&to` | | **200** the daily report; costs are null for the worker | The owner, an admin or the worker |
+| `GET /api/reports/establishment/{id}/hours.csv?from&to` | | **200** `text/csv` file | The owner or an admin |
+| `GET /api/reports/establishment/{id}/time-entries.csv?from&to&includeVoided` | | **200** `text/csv` file | The owner or an admin |
+| `GET /api/reports/worker/{workerId}/time-entries.csv?from&to&includeVoided` | | **200** `text/csv` file | The owner, an admin or the worker |
+
+A time entry looks like this:
+
+```json
+{
+  "id": 41, "workerId": 5, "workerFirstName": "Lucía", "workerLastName": "Pérez", "establishmentId": 1,
+  "businessDate": "2026-11-20", "clockIn": "2026-11-20T17:02:00Z", "clockOut": "2026-11-21T01:05:00Z",
+  "breakMinutes": 20, "workedMinutes": 463, "shiftId": 12, "source": "WORKER", "status": "CLOSED",
+  "isEdited": false, "isStale": false, "note": null
+}
+```
+
+The `from` and `to` filters of the time entry listings apply to the business day, are optional and include both ends. Establishment responses now include `timeZone`, and shift responses include `endsNextDay` and `durationMinutes`.
 
 ### Typical flow
 
@@ -275,7 +407,8 @@ Flyway owns the schema. The scripts are in `src/main/resources/db/migration` and
 
 - `V1__baseline.sql` is the schema that `ddl-auto=update` used to create.
 - On a database that already has those tables but no Flyway history (for example the Supabase database), the first start marks V1 as applied without running it, keeps the data, and runs only V2 onwards (`baseline-on-migrate`). `V2` adds the pieces an older database might be missing.
-- Any schema change goes in a new script, `V4__what_it_does.sql`, `V5__...`. Never edit a script that has already run anywhere.
+- `V4` to `V7` add the establishment's time zone (existing ones get `Europe/Madrid`), the generated interval columns of shifts, hourly rates, and time entries with their history. They only add columns, tables, indexes and a trigger, so they run on a database that already has data.
+- Any schema change goes in a new script, `V8__what_it_does.sql`, `V9__...`. Never edit a script that has already run anywhere.
 
 ### Tests
 
@@ -293,7 +426,7 @@ JWT_SECRET=test-only-secret-0123456789-abcdefghijkl RESEND_API_KEY=test ./mvnw t
 
 ```
 src/main/java/com/moga/khronosdemo
-├── config/        OpenAPI and password encoder beans, first admin bootstrap
+├── config/        OpenAPI, password encoder and clock beans, first admin bootstrap, time-tracking settings
 ├── controllers/   REST endpoints and @PreAuthorize rules
 ├── dtos/          Request DTOs (with validation) and response DTOs
 ├── entities/      JPA entities and the Role enum
@@ -303,7 +436,7 @@ src/main/java/com/moga/khronosdemo
 ├── repositories/  Spring Data JPA repositories, including the overlap and coverage queries
 ├── security/      SecurityConfig, AccessGuard, the user-details service, JWT issuing and checking, login limits
 ├── services/      Service interfaces and their implementations (business rules)
-└── validation/    Custom constraints: batch size and password length in bytes
+└── validation/    Custom constraints: batch size, password length in bytes, time zone ids
 
 src/main/resources/db/migration   Flyway migrations
 ```
