@@ -99,7 +99,8 @@ public class WorkerEventServiceImpl implements WorkerEventService {
         LocalDate eventDate = event.getDateTime().toLocalDate();
         LocalTime eventTime = event.getDateTime().toLocalTime();
 
-        if (!workerShiftRepository.existsShiftCoveringEvent(worker.getUserId(), event.getZone().getId(), eventDate, eventTime)) {
+        // A shift from the day before that runs past midnight can cover an event in the early hours
+        if (!workerShiftRepository.existsShiftCoveringEvent(worker.getUserId(), event.getZone().getId(), event.getDateTime())) {
             throw new BusinessRuleException("The worker has no shift in zone '" + event.getZone().getName()
                     + "' on " + eventDate + " that has started by " + eventTime + " and is still running");
         }

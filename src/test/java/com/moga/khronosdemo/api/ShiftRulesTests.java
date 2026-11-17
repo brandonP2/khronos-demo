@@ -112,13 +112,15 @@ class ShiftRulesTests extends IntegrationTest {
                 .andExpect(jsonPath("$.startTime").value("10:00:00"));
     }
 
+    // An end time before the start time used to be rejected; it now means the shift ends the next day
+    // (see NightShiftTests). Only a shift with no length at all is still refused.
     @Test
-    void rejectsAShiftThatEndsBeforeItStarts() throws Exception {
+    void rejectsAShiftThatStartsAndEndsAtTheSameTime() throws Exception {
         mockMvc.perform(postJson("/api/worker-shifts", """
-                        [ { "workerId": %d, "zoneId": %d, "date": "2030-05-10", "startTime": "22:00", "endTime": "02:00" } ]
+                        [ { "workerId": %d, "zoneId": %d, "date": "2030-05-10", "startTime": "22:00", "endTime": "22:00" } ]
                         """.formatted(worker.getUserId(), zone.getId())).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("Shift [0]: End time must be after start time"));
+                .andExpect(jsonPath("$.message").value("Shift [0]: A shift cannot start and end at the same time"));
     }
 
     @Test

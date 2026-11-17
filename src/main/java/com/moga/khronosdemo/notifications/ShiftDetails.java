@@ -10,4 +10,9 @@ public record ShiftDetails(LocalDate date, LocalTime startTime, LocalTime endTim
     public static ShiftDetails of(WorkerShift shift) {
         return new ShiftDetails(shift.getDate(), shift.getStartTime(), shift.getEndTime(), shift.getZone().getName());
     }
+
+    // The shift runs past midnight, as in 18:00-02:00
+    public boolean endsNextDay() {
+        return WorkerShift.endsNextDay(startTime, endTime);
+    }
 }

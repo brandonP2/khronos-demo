@@ -55,8 +55,7 @@ public class EventAssignmentReconciler {
         return workerShiftRepository.existsShiftCoveringEvent(
                 worker.getUserId(),
                 event.getZone().getId(),
-                event.getDateTime().toLocalDate(),
-                event.getDateTime().toLocalTime());
+                event.getDateTime());
     }
 
     private void unassign(WorkerEvent workerEvent, EventDetails details) {

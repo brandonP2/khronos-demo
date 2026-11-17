@@ -84,13 +84,15 @@ public class WorkerNotificationListener {
         return """
                 <ul>
                   <li><strong>Date:</strong> %s</li>
-                  <li><strong>Time:</strong> %s - %s</li>
+                  <li><strong>Time:</strong> %s - %s%s</li>
                   <li><strong>Zone:</strong> %s</li>
                 </ul>
                 """.formatted(
                 shift.date().format(DATE),
                 shift.startTime().format(TIME),
                 shift.endTime().format(TIME),
+                // A shift that ends after midnight shows its end as the next day: 18:00 - 02:00 (+1)
+                shift.endsNextDay() ? " (+1)" : "",
                 htmlEscape(shift.zoneName()));
     }
 

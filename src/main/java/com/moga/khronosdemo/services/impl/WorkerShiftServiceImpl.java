@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -163,18 +164,26 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
             throw new BusinessRuleException("Worker is not active");
         }
 
-        if (!request.endTime().isAfter(request.startTime())) {
-            throw new BusinessRuleException("End time must be after start time");
+        // An end time before the start time means the shift ends the next day (18:00-02:00)
+        if (request.endTime().equals(request.startTime())) {
+            throw new BusinessRuleException("A shift cannot start and end at the same time");
+        }
+
+        if (WorkerShift.durationMinutes(request.startTime(), request.endTime()) > WorkerShift.MAX_DURATION_MINUTES) {
+            throw new BusinessRuleException("A shift cannot last more than "
+                    + WorkerShift.MAX_DURATION_MINUTES / 60 + " hours");
         }
 
         if (!zone.getEstablishment().getId().equals(worker.getEstablishment().getId())) {
             throw new BusinessRuleException("The zone does not belong to the worker's establishment");
         }
 
-        if (workerShiftRepository.existsOverlappingShift(worker.getUserId(), request.date(),
-                request.startTime(), request.endTime(), shiftId)) {
+        LocalDateTime startsAt = request.date().atTime(request.startTime());
+        LocalDateTime endsAt = WorkerShift.endOf(request.date(), request.startTime(), request.endTime());
+        if (workerShiftRepository.existsOverlappingShift(worker.getUserId(), startsAt, endsAt, shiftId)) {
+            String nextDay = WorkerShift.endsNextDay(request.startTime(), request.endTime()) ? " (+1)" : "";
             throw new BusinessRuleException("The worker already has a shift that overlaps with "
-                    + request.startTime() + "-" + request.endTime() + " on " + request.date());
+                    + request.startTime() + "-" + request.endTime() + nextDay + " on " + request.date());
         }
 
     }
