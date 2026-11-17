@@ -203,7 +203,7 @@ Manual entries and corrections answer **409** with one of: `Clock-in cannot be i
 
 ### Hourly rates
 
-A rate is what a worker costs per hour, in euros, from `effectiveFrom` on. A past rate is never edited: a pay change is a new rate from a later day, and a second rate for the same day answers **409** `The worker already has a rate effective from 2026-11-01`. The rate for a day is the one with the latest `effectiveFrom` on or before it. Only the worker's owner or an admin can read or change rates.
+A rate is what a worker costs per hour, in euros, from `effectiveFrom` on. A past rate is never edited: a pay change is a new rate from a later day, and a second rate for the same day answers **409** `The worker already has a rate effective from 2026-11-01`. The rate for a day is the one with the latest `effectiveFrom` on or before it. A rate can only be deleted before it takes effect, while its `effectiveFrom` is after today in the establishment's time zone: deleting one that is already in force would silently change the cost of days already worked, so it answers **409** `Cannot delete a rate that has already taken effect; add a new rate from the day the change applies instead`. Only the worker's owner or an admin can read or change rates.
 
 ### Reports
 
@@ -302,7 +302,7 @@ All endpoints are under `/api` and need a bearer token, except `POST /api/auth/l
 | `GET /api/time-entries/establishment/{id}/open` | | **200** the entries open right now | The owner or an admin |
 | `GET /api/workers/{workerId}/rates` | | **200** rates, the latest `effectiveFrom` first | The owner or an admin |
 | `POST /api/workers/{workerId}/rates` | `{ "hourlyRate": 12.50, "effectiveFrom": "2026-11-01" }` | **201** the rate | The owner or an admin |
-| `DELETE /api/workers/{workerId}/rates/{rateId}` | | **204** | The owner or an admin |
+| `DELETE /api/workers/{workerId}/rates/{rateId}` | | **204**, only for a rate that hasn't taken effect yet | The owner or an admin |
 | `GET /api/reports/establishment/{id}/hours?from&to` | | **200** the hours report | The owner or an admin |
 | `GET /api/reports/worker/{workerId}/days?from&to` | | **200** the daily report; costs are null for the worker | The owner, an admin or the worker |
 | `GET /api/reports/establishment/{id}/hours.csv?from&to` | | **200** `text/csv` file | The owner or an admin |

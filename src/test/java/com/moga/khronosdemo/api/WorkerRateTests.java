@@ -94,6 +94,7 @@ class WorkerRateTests extends IntegrationTest {
 
     @Test
     void deletesARateOnlyThroughItsOwnWorker() throws Exception {
+        clock.setNow(Instant.parse("2029-12-01T09:30:00Z"));
         Long rateId = longAt(mockMvc.perform(postJson("/api/workers/{id}/rates", """
                         { "hourlyRate": 12, "effectiveFrom": "2030-01-01" }
                         """, worker.getUserId()).with(as(owner)))
@@ -109,6 +110,27 @@ class WorkerRateTests extends IntegrationTest {
     }
 
     @Test
+    void onlyARateThatHasNotTakenEffectYetCanBeDeleted() throws Exception {
+        // 23:30 UTC on 31 December is already 1 January in Madrid, the venue's time zone
+        clock.setNow(Instant.parse("2029-12-31T23:30:00Z"));
+        Long past = addRate("2029-06-01");
+        Long today = addRate("2030-01-01");
+        Long tomorrow = addRate("2030-01-02");
+
+        for (Long inForce : new Long[]{past, today}) {
+            mockMvc.perform(deleteJson("/api/workers/{id}/rates/{rateId}", worker.getUserId(), inForce).with(as(owner)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.message").value("Cannot delete a rate that has already taken effect;"
+                            + " add a new rate from the day the change applies instead"));
+        }
+        mockMvc.perform(deleteJson("/api/workers/{id}/rates/{rateId}", worker.getUserId(), tomorrow).with(as(owner)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(getJson("/api/workers/{id}/rates", worker.getUserId()).with(as(owner)))
+                .andExpect(jsonPath("$[*].effectiveFrom", contains("2030-01-01", "2029-06-01")));
+    }
+
+    @Test
     void aWorkerCannotSeeOrChangeRatesNotEvenTheirOwn() throws Exception {
         mockMvc.perform(getJson("/api/workers/{id}/rates", worker.getUserId()).with(as(worker)))
                 .andExpect(status().isForbidden());
@@ -118,5 +140,13 @@ class WorkerRateTests extends IntegrationTest {
                 .andExpect(status().isForbidden());
 
         assertEquals(0, workerRateRepository.count());
+    }
+
+    private Long addRate(String effectiveFrom) throws Exception {
+        return longAt(mockMvc.perform(postJson("/api/workers/{id}/rates", """
+                        { "hourlyRate": 12, "effectiveFrom": "%s" }
+                        """.formatted(effectiveFrom), worker.getUserId()).with(as(owner)))
+                .andExpect(status().isCreated())
+                .andReturn(), "$.id");
     }
 }

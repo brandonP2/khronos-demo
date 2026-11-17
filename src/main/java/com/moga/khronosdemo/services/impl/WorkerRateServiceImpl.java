@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -56,10 +57,17 @@ public class WorkerRateServiceImpl implements WorkerRateService {
         return workerRateMapper.toResponse(workerRateRepository.save(rate));
     }
 
+    // A rate in force has already priced days that were worked, and deleting it would change their cost
+    // without a trace. Only a rate that starts after today, in the establishment's time zone, can go.
     @Override
     public void delete(Long workerId, Long rateId) {
         WorkerRate rate = workerRateRepository.findByIdAndWorker_UserId(rateId, workerId)
                 .orElseThrow(() -> new ResourceNotFoundException("WorkerRate", rateId));
+        LocalDate today = LocalDate.ofInstant(clock.instant(), rate.getWorker().getEstablishment().getZoneId());
+        if (!rate.getEffectiveFrom().isAfter(today)) {
+            throw new BusinessRuleException("Cannot delete a rate that has already taken effect; add a new rate"
+                    + " from the day the change applies instead");
+        }
         workerRateRepository.delete(rate);
     }
 
