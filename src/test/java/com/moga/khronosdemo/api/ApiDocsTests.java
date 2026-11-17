@@ -54,4 +54,31 @@ class ApiDocsTests extends IntegrationTest {
                 // The worker clocking in is taken from the token
                 .andExpect(jsonPath("$.paths['/api/time-entries/clock-in'].post.parameters").doesNotExist());
     }
+
+    @Test
+    void documentsCashClosingsExpensesAndTheSummary() throws Exception {
+        mockMvc.perform(getJson("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/cash-closings'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/cash-closings/{id}'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/cash-closings/{id}'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/cash-closings/{id}'].delete").exists())
+                .andExpect(jsonPath("$.paths['/api/cash-closings/{id}/close'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/cash-closings/{id}/reopen'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/cash-closings/{id}/history'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/cash-closings/establishment/{establishmentId}'].get.parameters[*].name",
+                        contains("establishmentId", "from", "to")))
+                .andExpect(jsonPath("$.paths['/api/expenses'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/expenses/{id}'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/expenses/{id}'].delete").exists())
+                .andExpect(jsonPath("$.paths['/api/expenses/establishment/{establishmentId}'].get.parameters[*].name",
+                        contains("establishmentId", "from", "to", "category")))
+                .andExpect(jsonPath("$.paths['/api/reports/establishment/{establishmentId}/summary'].get.parameters[*].name",
+                        contains("establishmentId", "from", "to")))
+                .andExpect(jsonPath("$.paths['/api/reports/establishment/{establishmentId}/summary.csv'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/reports/establishment/{establishmentId}/cash-closings.csv'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/reports/establishment/{establishmentId}/expenses.csv'].get").exists())
+                // The author is taken from the token
+                .andExpect(jsonPath("$.paths['/api/cash-closings'].post.parameters").doesNotExist());
+    }
 }
