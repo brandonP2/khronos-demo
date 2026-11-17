@@ -58,6 +58,7 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
         lockWorkers(requests.stream().map(WorkerShiftRequestDTO::workerId).toList());
 
         List<WorkerShiftResponseDTO> created = new ArrayList<>();
+        List<WorkerShift> saved = new ArrayList<>();
 
         for (int i = 0; i < requests.size(); i++) {
             WorkerShiftRequestDTO request = requests.get(i);
@@ -73,11 +74,15 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
             }
 
             WorkerShift workerShift = workerShiftRepository.save(workerShiftMapper.toEntity(request, worker, zone));
+            saved.add(workerShift);
 
             eventPublisher.publishEvent(new ShiftAssignedNotification(Recipient.of(worker), ShiftDetails.of(workerShift)));
 
             created.add(workerShiftMapper.toResponse(workerShift));
         }
+
+        // Entries clocked in before their shift was entered are matched to it now, under the same locks
+        timeEntryShiftLinker.linkToNewShifts(saved);
 
         return created;
     }

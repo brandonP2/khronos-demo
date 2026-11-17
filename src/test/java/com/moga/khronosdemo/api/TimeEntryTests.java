@@ -211,6 +211,56 @@ class TimeEntryTests extends IntegrationTest {
     }
 
     @Test
+    void creatingAShiftMatchesTheEntriesAlreadyClockedInWithinItsWindow() throws Exception {
+        // 00:30 on Saturday in Madrid, before the Friday night shift was entered: it counts for Saturday
+        clock.setNow(Instant.parse("2030-05-10T22:30:00Z"));
+        Long id = longAt(mockMvc.perform(post("/api/time-entries/clock-in").with(as(worker)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.shiftId").value(nullValue()))
+                .andExpect(jsonPath("$.businessDate").value("2030-05-11"))
+                .andReturn(), "$.id");
+        // Left as they are: an entry before the window (14:00), a voided one inside it and a colleague's
+        TimeEntry tooEarly = createTimeEntry(worker, null, FRIDAY, "2030-05-10T12:00:00Z", "2030-05-10T12:30:00Z", 0);
+        TimeEntry voided = createTimeEntry(worker, null, FRIDAY, "2030-05-10T16:00:00Z", "2030-05-10T17:00:00Z", 0);
+        voided.setVoidedAt(Instant.parse("2030-05-10T17:05:00Z"));
+        timeEntryRepository.save(voided);
+        TimeEntry colleagues = createTimeEntry(colleague, null, FRIDAY, "2030-05-10T16:00:00Z", "2030-05-10T20:00:00Z", 0);
+
+        Long night = longAt(mockMvc.perform(postJson("/api/worker-shifts", """
+                        [ { "workerId": %d, "zoneId": %d, "date": "2030-05-10", "startTime": "18:00", "endTime": "02:00" } ]
+                        """.formatted(worker.getUserId(), bar.getId())).with(as(owner)))
+                .andExpect(status().isCreated())
+                .andReturn(), "$[0].id");
+
+        mockMvc.perform(getJson("/api/time-entries/me/open").with(as(worker)))
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.shiftId").value(night))
+                .andExpect(jsonPath("$.businessDate").value("2030-05-10"));
+        assertNull(timeEntryRepository.findById(tooEarly.getId()).orElseThrow().getShift());
+        assertNull(timeEntryRepository.findById(voided.getId()).orElseThrow().getShift());
+        assertNull(timeEntryRepository.findById(colleagues.getId()).orElseThrow().getShift());
+        // Matching changes no time, so the history still only has the clock-in
+        assertEquals(1, timeEntryChangeRepository.count());
+    }
+
+    @Test
+    void anEntryInTheWindowOfTwoNewShiftsGoesToTheOneThatStartsFirst() throws Exception {
+        // 12:30 in Madrid: during a 10:00-14:00 shift, and within three hours of a 15:00-18:00 one
+        TimeEntry entry = createTimeEntry(worker, null, FRIDAY, "2030-05-10T10:30:00Z", "2030-05-10T11:30:00Z", 0);
+
+        Long morning = longAt(mockMvc.perform(postJson("/api/worker-shifts", """
+                        [
+                          { "workerId": %1$d, "zoneId": %2$d, "date": "2030-05-10", "startTime": "15:00", "endTime": "18:00" },
+                          { "workerId": %1$d, "zoneId": %2$d, "date": "2030-05-10", "startTime": "10:00", "endTime": "14:00" }
+                        ]
+                        """.formatted(worker.getUserId(), bar.getId())).with(as(owner)))
+                .andExpect(status().isCreated())
+                .andReturn(), "$[1].id");
+
+        assertEquals(morning, timeEntryRepository.findById(entry.getId()).orElseThrow().getShift().getId());
+    }
+
+    @Test
     void anEntryOpenForMoreThanSixteenHoursIsStale() throws Exception {
         clock.setNow(Instant.parse("2030-05-10T16:00:00Z"));
         mockMvc.perform(post("/api/time-entries/clock-in").with(as(worker))).andExpect(status().isCreated());

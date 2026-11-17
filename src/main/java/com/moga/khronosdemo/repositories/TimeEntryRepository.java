@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -104,6 +105,19 @@ public interface TimeEntryRepository extends JpaRepository<TimeEntry, Long> {
                               @Param("start") Instant start,
                               @Param("end") Instant end,
                               @Param("excludeId") Long excludeId);
+
+    // The workers' entries that no shift was matched to, clocked in from 'from' (included) to 'to', for
+    // the shifts just created. Voided entries are left alone.
+    @Query("""
+            select t from TimeEntry t
+            where t.worker.userId in :workerIds
+              and t.shift is null
+              and t.voidedAt is null
+              and t.clockIn >= :from and t.clockIn < :to
+            """)
+    List<TimeEntry> findUnmatchedByWorkers(@Param("workerIds") Collection<Long> workerIds,
+                                           @Param("from") Instant from,
+                                           @Param("to") Instant to);
 
     // After a shift is edited, its entries that no longer match it (another worker now, or a clock-in
     // outside the shift's matching window) lose the link
