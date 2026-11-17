@@ -50,6 +50,8 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
     @Override
     public List<WorkerShiftResponseDTO> create(List<WorkerShiftRequestDTO> requests) {
 
+        lockWorkers(requests.stream().map(WorkerShiftRequestDTO::workerId).toList());
+
         List<WorkerShiftResponseDTO> created = new ArrayList<>();
 
         for (int i = 0; i < requests.size(); i++) {
@@ -127,6 +129,7 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
     public WorkerShiftResponseDTO update(Long id, WorkerShiftRequestDTO request) {
 
         WorkerShift workerShift = getWorkerShift(id);
+        lockWorkers(List.of(workerShift.getWorker().getUserId(), request.workerId()));
         Worker worker = getWorker(request.workerId());
         Zone zone = getZone(request.zoneId());
 
@@ -156,6 +159,7 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
     public void delete(Long id) {
         WorkerShift workerShift = getWorkerShift(id);
         Worker worker = workerShift.getWorker();
+        lockWorkers(List.of(worker.getUserId()));
         eventPublisher.publishEvent(new ShiftCancelledNotification(Recipient.of(worker), ShiftDetails.of(workerShift)));
         workerShiftRepository.delete(workerShift);
         assignmentReconciler.unassignUncoveredEvents(worker);
@@ -181,6 +185,13 @@ public class WorkerShiftServiceImpl implements WorkerShiftService {
                     + request.startTime() + "-" + request.endTime() + " on " + request.date());
         }
 
+    }
+
+    // The overlap and coverage checks read first and write later. Holding each worker's row lock
+    // until commit makes concurrent requests for the same worker take turns, so a second request
+    // sees the first one's shifts and assignments instead of both passing the checks.
+    private void lockWorkers(List<Long> workerIds) {
+        workerRepository.lockAllById(workerIds);
     }
 
     private WorkerShift getWorkerShift(Long id) {

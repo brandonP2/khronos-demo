@@ -51,6 +51,10 @@ public class WorkerEventServiceImpl implements WorkerEventService {
     @Override
     public List<WorkerEventResponseDTO> create(List<WorkerEventRequestDTO> requests) {
 
+        // Takes turns with shift changes for the same workers (see WorkerShiftServiceImpl), so a
+        // shift cannot be deleted or moved while an assignment that relies on it is being checked
+        workerRepository.lockAllById(requests.stream().map(WorkerEventRequestDTO::workerId).toList());
+
         List<WorkerEventResponseDTO> created = new ArrayList<>();
 
         for (int i = 0; i < requests.size(); i++) {
