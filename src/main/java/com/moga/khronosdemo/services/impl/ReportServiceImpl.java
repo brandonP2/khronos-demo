@@ -168,6 +168,32 @@ public class ReportServiceImpl implements ReportService {
                 dayRows);
     }
 
+    @Override
+    public byte[] hoursCsv(Long establishmentId, LocalDate from, LocalDate to) {
+        return ReportCsvFormatter.hours(hoursByEstablishment(establishmentId, from, to));
+    }
+
+    // The time-tracking record: one row per entry, with times in the establishment's time zone
+    @Override
+    public byte[] timeEntriesCsvByEstablishment(Long establishmentId, LocalDate from, LocalDate to,
+                                                boolean includeVoided) {
+        DateRange range = DateRange.bounded(from, to, MAX_DAYS);
+        Establishment establishment = establishmentRepository.findById(establishmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Establishment", establishmentId));
+        List<TimeEntry> entries = timeEntryRepository.findByEstablishment(establishmentId, range.from(), range.to(),
+                includeVoided);
+        return ReportCsvFormatter.timeEntries(entries, establishment.getZoneId());
+    }
+
+    @Override
+    public byte[] timeEntriesCsvByWorker(Long workerId, LocalDate from, LocalDate to, boolean includeVoided) {
+        DateRange range = DateRange.bounded(from, to, MAX_DAYS);
+        Worker worker = workerRepository.findWithUserAndEstablishmentById(workerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Worker", workerId));
+        List<TimeEntry> entries = timeEntryRepository.findByWorker(workerId, range.from(), range.to(), includeVoided);
+        return ReportCsvFormatter.timeEntries(entries, worker.getEstablishment().getZoneId());
+    }
+
     private WorkerHoursResponseDTO row(Worker worker, WorkTally tally, RateSchedule rates, LocalDate today, Instant now) {
         User user = worker.getUser();
         long planned = tally.plannedMinutes();
