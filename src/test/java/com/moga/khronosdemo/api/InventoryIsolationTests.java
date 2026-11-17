@@ -26,9 +26,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * The inventory is only for the establishment's owner and admins. A worker gets 403 everywhere, even for
- * their own venue, and owner A gets 403 for everything of owner B's venue, also when one of B's
- * suppliers, products or order lines is named in the body of a request about A's own venue. Nothing of
- * B's is created, changed or shown.
+ * their own venue and before their request is validated, and owner A gets 403 for everything of owner B's
+ * venue, also when one of B's suppliers, products or order lines is named in the body of a request about
+ * A's own venue. Nothing of B's is created, changed or shown.
  */
 class InventoryIsolationTests extends IntegrationTest {
 
@@ -92,6 +92,27 @@ class InventoryIsolationTests extends IntegrationTest {
             expectForbidden(as(workerA), request);
         }
         assertNothingOfBChanged();
+    }
+
+    @Test
+    void aWorkerIsForbiddenBeforeTheirRequestIsValidated() throws Exception {
+        // Every one of these answers 400 to owner A, the venue's owner: a body or parameters that fail
+        // validation. A worker of that venue gets 403 for each, before anything is read
+        for (MockHttpServletRequestBuilder request : invalidRequestsAboutA()) {
+            expectForbidden(as(workerA), request);
+        }
+        for (MockHttpServletRequestBuilder request : invalidRequestsAboutA()) {
+            mockMvc.perform(request.with(as(ownerA))).andExpect(status().isBadRequest());
+        }
+
+        // Without a token it is still 401
+        mockMvc.perform(postJson("/api/stock-movements", "{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+        assertNothingOfBChanged();
+        assertEquals(0, jdbcTemplate.queryForObject("select count(*) from stock_movements where establishment_id = ?",
+                Integer.class, venueA.getId()));
+        assertEquals(PurchaseOrderStatus.ORDERED, purchaseOrderRepository.findById(orderedA).orElseThrow().getStatus());
     }
 
     @Test
@@ -225,6 +246,36 @@ class InventoryIsolationTests extends IntegrationTest {
                 getJson("/api/reports/establishment/{id}/inventory" + RANGE, venueB.getId()),
                 get("/api/reports/establishment/{id}/inventory.csv", venueB.getId()),
                 get("/api/reports/establishment/{id}/stock-movements.csv" + RANGE, venueB.getId()));
+    }
+
+    // Requests about venue A and its records, on every path of this release, that fail validation
+    private List<MockHttpServletRequestBuilder> invalidRequestsAboutA() {
+        return List.of(
+                getJson("/api/suppliers/establishment/{id}", "nope"),
+                postJson("/api/suppliers", "{}"),
+                putJson("/api/suppliers/{id}", "{ \"name\": \"\" }", supplierA),
+                deleteJson("/api/suppliers/{id}", "nope"),
+                getJson("/api/products/establishment/{id}?includeInactive=maybe", venueA.getId()),
+                getJson("/api/products/{id}", "nope"),
+                postJson("/api/products", "{}"),
+                putJson("/api/products/{id}", "{}", productA),
+                putJson("/api/products/{id}/active", "{}", productA),
+                postJson("/api/stock-movements", """
+                        { "productId": %d, "type": "COUNT", "quantity": 1 }
+                        """.formatted(productA)),
+                getJson("/api/stock-movements/establishment/{id}?type=THEFT", venueA.getId()),
+                getJson("/api/stock-movements/establishment/{id}?from=2030-05-10&to=2030-05-01", venueA.getId()),
+                postJson("/api/stock-counts", "{}"),
+                getJson("/api/purchase-orders/establishment/{id}?status=SENT", venueA.getId()),
+                getJson("/api/purchase-orders/{id}", "nope"),
+                postJson("/api/purchase-orders", "{}"),
+                putJson("/api/purchase-orders/{id}", "{}", draftA),
+                putJson("/api/purchase-orders/{id}/order", "{}", "nope"),
+                putJson("/api/purchase-orders/{id}/receive", "{ \"lines\": [] }", orderedA),
+                getJson("/api/reports/establishment/{id}/inventory", venueA.getId()),
+                getJson("/api/reports/establishment/{id}/inventory?from=2030-05-01", venueA.getId()),
+                get("/api/reports/establishment/{id}/inventory.csv", "nope"),
+                get("/api/reports/establishment/{id}/stock-movements.csv?from=2030-05-01&to=2031-06-01", venueA.getId()));
     }
 
     private void expectForbidden(RequestPostProcessor caller, MockHttpServletRequestBuilder request) throws Exception {

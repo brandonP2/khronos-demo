@@ -35,13 +35,19 @@ public class SecurityConfig {
     // Paths only owners and admins ever use. Here a worker is turned away before the body or the parameters
     // are read, so they get 403, never a 400 that describes a request they could not make anyway. Which
     // owner may reach which establishment is still up to @PreAuthorize and AccessGuard on each endpoint.
-    // /api/reports/worker/** is left out on purpose: a worker reads their own daily report there.
+    // /api/reports/worker/** is left out on purpose: a worker reads their own daily report there. The
+    // inventory is all owner-only, and its report and exports are under /api/reports/establishment/**.
     private static final String[] OWNERS_AND_ADMINS_ONLY = {
             "/api/cash-closings/**",
             "/api/expenses/**",
             "/api/reports/establishment/**",
             "/api/workers/*/rates/**",
-            "/api/time-entries/establishment/**"
+            "/api/time-entries/establishment/**",
+            "/api/suppliers/**",
+            "/api/products/**",
+            "/api/stock-movements/**",
+            "/api/stock-counts/**",
+            "/api/purchase-orders/**"
     };
 
     private final HandlerExceptionResolver exceptionResolver;
