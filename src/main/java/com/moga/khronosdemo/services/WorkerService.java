@@ -25,4 +25,6 @@ public interface WorkerService {
 
     void changeActivationStatus(Long userId);
 
+    WorkerResponseDTO setActive(Long userId, boolean active);
+
 }

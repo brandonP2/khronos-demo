@@ -1,5 +1,6 @@
 package com.moga.khronosdemo.controllers;
 
+import com.moga.khronosdemo.dtos.request.WorkerActiveRequestDTO;
 import com.moga.khronosdemo.dtos.request.WorkerRequestDTO;
 import com.moga.khronosdemo.dtos.request.WorkerWithUserRequestDTO;
 import com.moga.khronosdemo.dtos.response.WorkerResponseDTO;
@@ -71,6 +72,17 @@ public class WorkerController {
         workerService.delete(userId);
     }
 
+    // Sets the flag to the given value, so repeating the request is safe
+    @PutMapping("/{userId}/active")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsWorker(#userId)")
+    public WorkerResponseDTO setActive(@PathVariable Long userId, @Valid @RequestBody WorkerActiveRequestDTO request) {
+        return workerService.setActive(userId, request.active());
+    }
+
+    /**
+     * @deprecated toggles the flag, so a retried request undoes itself. Use PUT /api/workers/{userId}/active.
+     */
+    @Deprecated
     @DeleteMapping("/deactivate/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or @access.ownsWorker(#userId)")

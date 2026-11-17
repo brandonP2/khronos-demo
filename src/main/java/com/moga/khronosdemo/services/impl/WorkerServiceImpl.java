@@ -109,6 +109,13 @@ public class WorkerServiceImpl implements WorkerService {
         getWorker(user.getId()).setActive(!getWorker(user.getId()).getActive().equals(true));
     }
 
+    @Override
+    public WorkerResponseDTO setActive(Long userId, boolean active) {
+        Worker worker = getWorker(userId);
+        worker.setActive(active);
+        return workerMapper.toResponse(worker);
+    }
+
     private Worker getWorker(Long userId) {
         return workerRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Worker", userId));
