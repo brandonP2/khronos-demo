@@ -3,6 +3,7 @@ package com.moga.khronosdemo.dtos.response;
 /**
  * Stable reason sent as "code" in some error responses, so clients can tell these cases apart without
  * reading the message, whose wording may change. Responses for any other error leave the field out.
+ * A 409 gets one, and the details that go with it, through BusinessRuleException.
  */
 public enum ErrorCode {
 
@@ -46,5 +47,8 @@ public enum ErrorCode {
     CASH_DAY_CLOSED,
 
     /** 409 when a cash closing's business day or an expense's date is after today in the establishment's time zone. */
-    FUTURE_DATE
+    FUTURE_DATE,
+
+    /** 409 when another supplier of the establishment already has that name, whatever its case. */
+    SUPPLIER_NAME_TAKEN
 }

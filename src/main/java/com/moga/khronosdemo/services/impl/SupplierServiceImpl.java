@@ -1,6 +1,7 @@
 package com.moga.khronosdemo.services.impl;
 
 import com.moga.khronosdemo.dtos.request.SupplierRequestDTO;
+import com.moga.khronosdemo.dtos.response.ErrorCode;
 import com.moga.khronosdemo.dtos.response.SupplierResponseDTO;
 import com.moga.khronosdemo.entities.Establishment;
 import com.moga.khronosdemo.entities.Supplier;
@@ -95,6 +96,7 @@ public class SupplierServiceImpl implements SupplierService {
     }
 
     private static BusinessRuleException nameTaken(String name) {
-        return new BusinessRuleException("A supplier named '" + name + "' already exists at this establishment");
+        return new BusinessRuleException("A supplier named '" + name + "' already exists at this establishment",
+                ErrorCode.SUPPLIER_NAME_TAKEN);
     }
 }

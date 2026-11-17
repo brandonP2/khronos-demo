@@ -82,12 +82,14 @@ class SupplierTests extends IntegrationTest {
                         { "establishmentId": %d, "name": " MAHOU " }
                         """.formatted(venue.getId())).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("A supplier named 'MAHOU' already exists at this establishment"));
+                .andExpect(jsonPath("$.message").value("A supplier named 'MAHOU' already exists at this establishment"))
+                .andExpect(jsonPath("$.code").value("SUPPLIER_NAME_TAKEN"));
         mockMvc.perform(putJson("/api/suppliers/{id}", """
                         { "name": "mahou" }
                         """, ruiz).with(as(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("A supplier named 'mahou' already exists at this establishment"));
+                .andExpect(jsonPath("$.message").value("A supplier named 'mahou' already exists at this establishment"))
+                .andExpect(jsonPath("$.code").value("SUPPLIER_NAME_TAKEN"));
 
         // A supplier can change the case of its own name, and another venue can use the same name
         mockMvc.perform(putJson("/api/suppliers/{id}", """
