@@ -16,6 +16,9 @@ public interface WorkerEventRepository extends JpaRepository<WorkerEvent, Long> 
 
     boolean existsByWorker_UserIdAndEvent_Id(Long workerId, Long eventId);
 
+    @Query("select we.worker.userId from WorkerEvent we where we.event.id = :eventId")
+    List<Long> findWorkerIdsByEventId(@Param("eventId") Long eventId);
+
     // Assignments to the establishment's events, filtered on the event's date-time and, unless
     // workerId is null, on the worker. A null bound leaves that side of the range open; the casts
     // give PostgreSQL its type.

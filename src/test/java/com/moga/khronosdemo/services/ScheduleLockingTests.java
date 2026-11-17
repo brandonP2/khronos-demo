@@ -1,5 +1,6 @@
 package com.moga.khronosdemo.services;
 
+import com.moga.khronosdemo.dtos.request.EventRequestDTO;
 import com.moga.khronosdemo.dtos.request.WorkerEventRequestDTO;
 import com.moga.khronosdemo.dtos.request.WorkerShiftRequestDTO;
 import com.moga.khronosdemo.entities.Establishment;
@@ -17,6 +18,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -33,8 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Concurrent schedule changes for the same worker must take turns. Each test keeps a first change
- * open inside a transaction, checks that a second change for the same worker is still waiting, and
+ * Concurrent schedule changes for the same worker, or for the same event, must take turns. Each test
+ * keeps a first change open inside a transaction, checks that a second change is still waiting, and
  * only then lets the first one commit.
  */
 class ScheduleLockingTests extends IntegrationTest {
@@ -47,6 +49,9 @@ class ScheduleLockingTests extends IntegrationTest {
 
     @Autowired
     private WorkerEventService workerEventService;
+
+    @Autowired
+    private EventService eventService;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -120,6 +125,75 @@ class ScheduleLockingTests extends IntegrationTest {
     }
 
     @Test
+    void movingAnEventWaitsForAnAssignmentBeingMadeToIt() throws Exception {
+        createShift(worker, zone, DAY, "18:00", "23:00");
+        Event dinner = createEvent(zone, DAY.atTime(19, 0));
+        Future<?> first = holdOpen(() -> workerEventService.create(
+                List.of(new WorkerEventRequestDTO(worker.getUserId(), dinner.getId()))));
+
+        Future<?> second = pool.submit(() -> eventService.update(dinner.getId(), moved(dinner, DAY.atTime(23, 30))));
+        assertStillWaiting(second);
+
+        releaseFirst.countDown();
+        first.get(10, TimeUnit.SECONDS);
+        second.get(10, TimeUnit.SECONDS);
+        // The move ran after the assignment was committed, saw it, and removed it: the shift ends at 23:00
+        assertEquals(DAY.atTime(23, 30), eventRepository.findById(dinner.getId()).orElseThrow().getDateTime());
+        assertEquals(0, workerEventRepository.count());
+    }
+
+    @Test
+    void anAssignmentWaitsForAMoveOfItsEventAndIsCheckedAgainstTheNewTime() throws Exception {
+        createShift(worker, zone, DAY, "18:00", "23:00");
+        Event dinner = createEvent(zone, DAY.atTime(19, 0));
+        Future<?> first = holdOpen(() -> eventService.update(dinner.getId(), moved(dinner, DAY.atTime(23, 30))));
+
+        Future<?> second = pool.submit(() -> workerEventService.create(
+                List.of(new WorkerEventRequestDTO(worker.getUserId(), dinner.getId()))));
+        assertStillWaiting(second);
+
+        releaseFirst.countDown();
+        first.get(10, TimeUnit.SECONDS);
+        assertFailsWithBusinessRule(second);
+        assertEquals(0, workerEventRepository.count());
+    }
+
+    @Test
+    void deletingAnEventWaitsForAnAssignmentBeingMadeToIt() throws Exception {
+        createShift(worker, zone, DAY, "18:00", "23:00");
+        Event dinner = createEvent(zone, DAY.atTime(19, 0));
+        Future<?> first = holdOpen(() -> workerEventService.create(
+                List.of(new WorkerEventRequestDTO(worker.getUserId(), dinner.getId()))));
+
+        Future<?> second = pool.submit(() -> eventService.delete(dinner.getId()));
+        assertStillWaiting(second);
+
+        releaseFirst.countDown();
+        first.get(10, TimeUnit.SECONDS);
+        // The delete ran after the assignment was committed, saw it, and took it with the event
+        second.get(10, TimeUnit.SECONDS);
+        assertFalse(eventRepository.existsById(dinner.getId()));
+        assertEquals(0, workerEventRepository.count());
+    }
+
+    @Test
+    void aShiftChangeWaitsForAMoveOfAnEventItsWorkerIsAssignedTo() throws Exception {
+        WorkerShift evening = createShift(worker, zone, DAY, "18:00", "23:00");
+        Event dinner = createEvent(zone, DAY.atTime(19, 0));
+        assign(worker, dinner);
+        Future<?> first = holdOpen(() -> eventService.update(dinner.getId(), moved(dinner, DAY.atTime(20, 0))));
+
+        Future<?> second = pool.submit(() -> workerShiftService.update(evening.getId(), shift(worker, "21:00", "23:00")));
+        assertStillWaiting(second);
+
+        releaseFirst.countDown();
+        first.get(10, TimeUnit.SECONDS);
+        second.get(10, TimeUnit.SECONDS);
+        // The shift change saw the event at 20:00, which 21:00-23:00 no longer covers
+        assertEquals(0, workerEventRepository.count());
+    }
+
+    @Test
     void changesForDifferentWorkersDoNotWaitForEachOther() throws Exception {
         Future<?> first = holdOpen(() -> workerShiftService.create(List.of(shift(worker, "18:00", "23:00"))));
 
@@ -155,6 +229,10 @@ class ScheduleLockingTests extends IntegrationTest {
     private static void assertFailsWithBusinessRule(Future<?> second) {
         ExecutionException failure = assertThrows(ExecutionException.class, () -> second.get(10, TimeUnit.SECONDS));
         assertInstanceOf(BusinessRuleException.class, failure.getCause());
+    }
+
+    private EventRequestDTO moved(Event event, LocalDateTime dateTime) {
+        return new EventRequestDTO(event.getTitle(), dateTime, zone.getId(), event.getPeopleNumber(), event.getDescription());
     }
 
     private WorkerShiftRequestDTO shift(Worker worker, String start, String end) {

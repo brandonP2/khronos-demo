@@ -1,11 +1,14 @@
 package com.moga.khronosdemo.repositories;
 
 import com.moga.khronosdemo.entities.Event;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 public interface EventRepository extends JpaRepository<Event, Long> {
@@ -33,4 +36,11 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     List<Event> findByEstablishment(@Param("establishmentId") Long establishmentId,
                                     @Param("from") LocalDateTime from,
                                     @Param("until") LocalDateTime until);
+
+    // Locks the events' rows until the transaction ends, in id order. Whatever locks events and workers
+    // locks the events first and the workers after (WorkerRepository.lockAllById), so two requests never
+    // end up waiting for each other.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from Event e where e.id in :ids order by e.id")
+    List<Event> lockAllById(@Param("ids") Collection<Long> ids);
 }

@@ -134,6 +134,7 @@ These rules are enforced in the service layer. Breaking one returns **409 Confli
 - A worker can only be assigned to an event once, including twice in the same batch.
 - A worker can only be assigned to an event in their own establishment, and only if one of their shifts covers it: the shift must be in the event's zone and running at the event's start time. A night shift that started the day before counts, so a Friday shift from 18:00 to 02:00 covers an event at 01:00 on Saturday.
 - If a worker's shift is edited or deleted and it no longer covers an event they are assigned to, they are unassigned from that event automatically. The same happens when an event is moved to a time or zone that the worker's shifts don't cover.
+- Requests that arrive at the same time take turns: assigning workers to an event, moving or deleting that event, and changing the shifts of its workers. Each one sees what the one before it committed, so an assignment is always checked against the event's current time and zone.
 
 ## Time tracking
 
