@@ -289,6 +289,38 @@ class StockMovementTests extends IntegrationTest {
     }
 
     @Test
+    void refusesAMovementThatWouldLeaveAStockTooLargeToKeep() throws Exception {
+        // 1000 purchases of 999999999.999, written straight to the ledger, leave a stock of 999999999999
+        seed(rum, "PURCHASE", "999999999.999", 1000);
+        mockMvc.perform(postJson("/api/stock-movements", """
+                        { "productId": %d, "type": "PURCHASE", "quantity": 1 }
+                        """.formatted(rum)).with(as(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.fieldErrors.quantity").value("would leave a stock of 1000000000000.000;"
+                        + " a product's stock can be at most 999999999999.999 either way"));
+        // Up to the largest stock a product can have
+        post(rum, "PURCHASE", "0.999", null, null, null)
+                .andExpect(jsonPath("$.stockAfter").value(999999999999.999));
+
+        // The same below zero
+        Long gin = product("Ginebra", null, null);
+        seed(gin, "ADJUSTMENT", "-999999999.999", 1000);
+        mockMvc.perform(postJson("/api/stock-movements", """
+                        { "productId": %d, "type": "ADJUSTMENT", "quantity": -1, "reason": "Descuadre" }
+                        """.formatted(gin)).with(as(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.quantity").value("would leave a stock of -1000000000000.000;"
+                        + " a product's stock can be at most 999999999999.999 either way"));
+        mockMvc.perform(postJson("/api/stock-movements", """
+                        { "productId": %d, "type": "WASTE", "quantity": 1, "reason": "Rota" }
+                        """.formatted(gin)).with(as(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.quantity").exists());
+        assertEquals(2001, stockMovementRepository.count());
+    }
+
+    @Test
     void aMissingProductIsNotFoundForAnAdmin() throws Exception {
         mockMvc.perform(postJson("/api/stock-movements", """
                         { "productId": 999999, "type": "PURCHASE", "quantity": 1 }
@@ -306,6 +338,15 @@ class StockMovementTests extends IntegrationTest {
                 select stock_after from stock_movements where product_id = ? order by created_at desc, id desc limit 1
                 """, BigDecimal.class, productId);
         assertEquals(0, sum.compareTo(last), "the last stockAfter is the sum of the ledger");
+    }
+
+    // Movements of the product written straight to the ledger, without the API's checks
+    private void seed(Long productId, String type, String quantity, int times) {
+        jdbcTemplate.update("""
+                insert into stock_movements (id, establishment_id, product_id, type, quantity, date, stock_after,
+                                             created_at, created_by_name)
+                select -n - ?, ?, ?, ?, ?, date '2030-05-01', 0, now(), 'Seed' from generate_series(1, ?) n
+                """, stockMovementRepository.count(), venue.getId(), productId, type, new BigDecimal(quantity), times);
     }
 
     private void lowStock(boolean expected) throws Exception {

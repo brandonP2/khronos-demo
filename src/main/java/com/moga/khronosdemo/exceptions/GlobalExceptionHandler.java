@@ -47,9 +47,10 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.CONFLICT, ex.getMessage(), ex.getCode(), request, null, ex.getDetails());
     }
 
+    // fieldErrors only when the service named the fields at fault
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ErrorResponseDTO> handleInvalidRequest(InvalidRequestException ex, HttpServletRequest request) {
-        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, null);
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, ex.getFieldErrors());
     }
 
     @ExceptionHandler(EmailDeliveryException.class)

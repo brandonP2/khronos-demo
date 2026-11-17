@@ -435,6 +435,34 @@ class PurchaseOrderTests extends IntegrationTest {
     }
 
     @Test
+    void aReceiptThatWouldLeaveAStockTooLargeToKeepReceivesNothing() throws Exception {
+        Long id = createOrder(lineOf(beer, "2", "90"), lineOf(rum, "1", "10"));
+        transition(id, "order");
+        // The rum's stock is already 999999999999, written straight to the ledger
+        jdbcTemplate.update("""
+                insert into stock_movements (id, establishment_id, product_id, type, quantity, date, stock_after,
+                                             created_at, created_by_name)
+                select -n, ?, ?, 'PURCHASE', 999999999.999, date '2030-05-01', 0, now(), 'Seed'
+                from generate_series(1, 1000) n
+                """, venue.getId(), rum);
+
+        receive(id, receiptOf(id, "2"), true, "CARD")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.fieldErrors['lines[1].receivedQuantity']").value("would leave a stock of"
+                        + " 1000000000000.000; a product's stock can be at most 999999999999.999 either way"))
+                .andExpect(jsonPath("$.fieldErrors['lines[0].receivedQuantity']").doesNotExist());
+
+        // Nothing at all was received
+        mockMvc.perform(getJson("/api/purchase-orders/{id}", id).with(as(owner)))
+                .andExpect(jsonPath("$.status").value("ORDERED"))
+                .andExpect(jsonPath("$.lines[*].receivedQuantity", contains(nullValue(), nullValue())))
+                .andExpect(jsonPath("$.expenseId").value(nullValue()));
+        assertEquals(1000, stockMovementRepository.count());
+        assertEquals(0, expenseRepository.count());
+    }
+
+    @Test
     void everyLineMustBeSentOnceAndSomethingMustArrive() throws Exception {
         Long id = createOrder(lineOf(beer, "2", "90"), lineOf(rum, "6", null));
         Long other = createOrder(lineOf(rum, "1", null));

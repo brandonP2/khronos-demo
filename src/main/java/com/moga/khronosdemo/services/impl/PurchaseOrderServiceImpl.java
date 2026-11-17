@@ -39,6 +39,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -225,6 +227,9 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 line.setUnitCost(products.get(line.getProduct().getId()).getUnitCost());
             }
         }
+        // The stock each line leaves must fit before anything is recorded (see StockLedger.outOfRange)
+        Map<Long, BigDecimal> stock = stockLedger.stockOf(products.keySet());
+        checkStockInRange(arrived, stock, request);
 
         User author = getUser(actorId);
         // The expense goes first: if ExpenseService refuses it, nothing has been recorded yet, and the
@@ -234,7 +239,6 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                     createExpense(order, receivedDate, request, author).id()));
         }
 
-        Map<Long, BigDecimal> stock = stockLedger.stockOf(products.keySet());
         for (PurchaseOrderLine line : arrived) {
             Product product = products.get(line.getProduct().getId());
             // The movement is valued at the line's cost, which becomes the product's (the same one when the
@@ -266,6 +270,24 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         return expenseService.create(new ExpenseRequestDTO(order.getEstablishment().getId(), receivedDate,
                 ExpenseCategory.SUPPLIES, "Pedido #" + order.getId(), order.getSupplier().getName(), total,
                 request.paymentMethod(), null), author.getId());
+    }
+
+    // 400 with lines[i].receivedQuantity, i being the line's place in the request, for every line whose
+    // stock after it would be out of range
+    private static void checkStockInRange(List<PurchaseOrderLine> arrived, Map<Long, BigDecimal> stock,
+                                          PurchaseOrderReceiveRequestDTO request) {
+        Map<Long, Integer> requestIndex = new HashMap<>();
+        for (int i = 0; i < request.lines().size(); i++) {
+            requestIndex.put(request.lines().get(i).lineId(), i);
+        }
+        Map<String, String> outOfRange = new LinkedHashMap<>();
+        for (PurchaseOrderLine line : arrived) {
+            String error = StockLedger.outOfRange(line.getReceivedQuantity(), stock.get(line.getProduct().getId()));
+            if (error != null) {
+                outOfRange.put("lines[" + requestIndex.get(line.getId()) + "].receivedQuantity", error);
+            }
+        }
+        StockLedger.rejectOutOfRange(outOfRange);
     }
 
     // Each line of the order, exactly once: the request already has no line twice

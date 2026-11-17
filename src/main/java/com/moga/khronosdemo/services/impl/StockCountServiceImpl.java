@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -52,7 +53,9 @@ public class StockCountServiceImpl implements StockCountService {
         this.stockMovementMapper = stockMovementMapper;
     }
 
-    // The request is already validated: 1 to 500 items, each product once. All or nothing
+    // The request is already validated: 1 to 500 items, each product once. All or nothing: an item whose
+    // difference, or the stock it leaves, doesn't fit (see StockLedger.outOfRange) answers 400 with that
+    // item's countedQuantity in fieldErrors, every such item at once, and nothing is recorded
     @Override
     public List<StockMovementResponseDTO> count(StockCountRequestDTO request, Long actorId) {
         Establishment establishment = establishmentRepository.findById(request.establishmentId())
@@ -72,15 +75,27 @@ public class StockCountServiceImpl implements StockCountService {
         }
 
         Map<Long, BigDecimal> stock = stockLedger.stockOf(productIds);
+        List<BigDecimal> differences = new ArrayList<>();
+        Map<String, String> outOfRange = new LinkedHashMap<>();
+        for (int i = 0; i < request.items().size(); i++) {
+            StockCountItemRequestDTO item = request.items().get(i);
+            BigDecimal before = stock.get(item.productId());
+            BigDecimal difference = item.countedQuantity().setScale(3, RoundingMode.UNNECESSARY).subtract(before);
+            String error = StockLedger.outOfRange(difference, before);
+            if (error != null) {
+                outOfRange.put("items[" + i + "].countedQuantity", error);
+            }
+            differences.add(difference);
+        }
+        StockLedger.rejectOutOfRange(outOfRange);
+
         User author = getUser(actorId);
         String reason = StringUtils.hasText(request.notes()) ? request.notes().strip() : null;
         List<StockMovementResponseDTO> recorded = new ArrayList<>();
-        for (StockCountItemRequestDTO item : request.items()) {
-            Product product = products.get(item.productId());
-            BigDecimal before = stock.get(item.productId());
-            BigDecimal difference = item.countedQuantity().setScale(3, RoundingMode.UNNECESSARY).subtract(before);
+        for (int i = 0; i < request.items().size(); i++) {
+            Product product = products.get(request.items().get(i).productId());
             recorded.add(stockMovementMapper.toResponse(stockLedger.record(product, StockMovementType.COUNT,
-                    difference, product.getUnitCost(), reason, date, before, author)));
+                    differences.get(i), product.getUnitCost(), reason, date, stock.get(product.getId()), author)));
         }
         return recorded;
     }

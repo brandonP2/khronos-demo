@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Purchases, waste, consumption and adjustments entered by hand. Each one is recorded under its product's
@@ -59,7 +60,8 @@ public class StockMovementServiceImpl implements StockMovementService {
                 .toList();
     }
 
-    // The request is already validated: COUNT is refused, and the quantity has the sign its type needs
+    // The request is already validated: COUNT is refused, and the quantity has the sign its type needs. The
+    // stock it would leave must still fit (400 on quantity otherwise, see StockLedger.outOfRange)
     @Override
     public StockMovementResponseDTO create(StockMovementRequestDTO request, Long actorId) {
         Product product = stockLedger.lock(request.productId());
@@ -77,6 +79,8 @@ public class StockMovementServiceImpl implements StockMovementService {
         }
 
         BigDecimal stockBefore = stockLedger.stockOf(product.getId());
+        String outOfRange = StockLedger.outOfRange(quantity, stockBefore);
+        StockLedger.rejectOutOfRange(outOfRange != null ? Map.of("quantity", outOfRange) : Map.of());
         return stockMovementMapper.toResponse(stockLedger.record(product, type, quantity, unitCost,
                 clean(request.reason()), date, stockBefore, getUser(actorId)));
     }

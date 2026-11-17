@@ -143,6 +143,30 @@ class StockCountTests extends IntegrationTest {
     }
 
     @Test
+    void refusesADifferenceTooLargeToRecordAndRecordsNothing() throws Exception {
+        // The tonic's stock is -2, so counting 999999999 would record a difference of 1000000001
+        mockMvc.perform(postJson("/api/stock-counts", """
+                        { "establishmentId": %d, "items": [ { "productId": %d, "countedQuantity": 8 },
+                                                           { "productId": %d, "countedQuantity": 999999999 } ] }
+                        """.formatted(venue.getId(), rum, tonic)).with(as(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.fieldErrors['items[1].countedQuantity']").value("would record a movement of"
+                        + " 1000000001.000 from the current stock of -2.000; a movement can be at most 999999999.999"
+                        + " either way"))
+                .andExpect(jsonPath("$.fieldErrors['items[0].countedQuantity']").doesNotExist());
+        assertNothingCounted();
+
+        // The largest difference a movement can record is fine
+        mockMvc.perform(postJson("/api/stock-counts", """
+                        { "establishmentId": %d, "items": [ { "productId": %d, "countedQuantity": 999999997.999 } ] }
+                        """.formatted(venue.getId(), tonic)).with(as(owner)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$[0].quantity").value(999999999.999))
+                .andExpect(jsonPath("$[0].stockAfter").value(999999997.999));
+    }
+
+    @Test
     void validatesTheRequest() throws Exception {
         mockMvc.perform(postJson("/api/stock-counts", """
                         { "notes": "%s", "items": [] }

@@ -8,6 +8,7 @@ import com.moga.khronosdemo.entities.StockMovement;
 import com.moga.khronosdemo.entities.User;
 import com.moga.khronosdemo.entities.enums.StockMovementType;
 import com.moga.khronosdemo.exceptions.BusinessRuleException;
+import com.moga.khronosdemo.exceptions.InvalidRequestException;
 import com.moga.khronosdemo.exceptions.ResourceNotFoundException;
 import com.moga.khronosdemo.repositories.ProductRepository;
 import com.moga.khronosdemo.repositories.StockMovementRepository;
@@ -48,11 +49,21 @@ import java.util.stream.Collectors;
  * Receiving an order therefore goes establishment, order, products, then creates its expense under the
  * establishment lock it already holds. Deleting an expense locks the establishment and then, through the
  * foreign key that clears purchase_orders.expense_id, the order row: the same order.
+ * <p>
+ * Range. A request's quantities are validated to fit the quantity column, but a count's difference and
+ * the stock a movement leaves are only worked out here: before recording anything, callers check them
+ * with outOfRange, so a value the columns can't hold answers 400 with the request's field instead of
+ * failing in the database.
  */
 @Component
 class StockLedger {
 
     private static final BigDecimal NO_STOCK = BigDecimal.ZERO.setScale(3);
+
+    // The most a movement can record and the most stock it can leave, either way: stock_movements keeps
+    // quantity as numeric(12, 3) and stock_after as numeric(15, 3)
+    static final BigDecimal MAX_QUANTITY = new BigDecimal("999999999.999");
+    static final BigDecimal MAX_STOCK = new BigDecimal("999999999999.999");
 
     private final ProductRepository productRepository;
     private final StockMovementRepository stockMovementRepository;
@@ -129,6 +140,35 @@ class StockLedger {
                          User author) {
         return stockMovementRepository.save(new StockMovement(product, type, quantity, unitCost, reason, date,
                 stockBefore.add(quantity), purchaseOrder, author, auditNow()));
+    }
+
+    /**
+     * Why a movement of this quantity, from this stock, can't be recorded, or null when it can: the
+     * quantity and the stock after it must fit their columns (MAX_QUANTITY, MAX_STOCK).
+     *
+     * @param quantity    signed, with three decimals
+     * @param stockBefore the product's stock read under its lock
+     */
+    static String outOfRange(BigDecimal quantity, BigDecimal stockBefore) {
+        if (quantity.abs().compareTo(MAX_QUANTITY) > 0) {
+            return "would record a movement of " + quantity.toPlainString() + " from the current stock of "
+                    + stockBefore.toPlainString() + "; a movement can be at most " + MAX_QUANTITY.toPlainString()
+                    + " either way";
+        }
+        BigDecimal stockAfter = stockBefore.add(quantity);
+        if (stockAfter.abs().compareTo(MAX_STOCK) > 0) {
+            return "would leave a stock of " + stockAfter.toPlainString() + "; a product's stock can be at most "
+                    + MAX_STOCK.toPlainString() + " either way";
+        }
+        return null;
+    }
+
+    // The fields of the request whose movement is out of range, with why, answered as a failed validation
+    // is: 400 "Validation failed" with fieldErrors. Nothing when there are none
+    static void rejectOutOfRange(Map<String, String> fieldErrors) {
+        if (!fieldErrors.isEmpty()) {
+            throw new InvalidRequestException("Validation failed", fieldErrors);
+        }
     }
 
     // An inactive product takes no new movements or purchase order lines
