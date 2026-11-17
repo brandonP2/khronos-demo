@@ -9,11 +9,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.BinaryOperator;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -22,6 +25,9 @@ import java.util.stream.Collectors;
  * with clock-in instants needs the establishment's time zone.
  */
 final class WorkTally {
+
+    private static final Comparator<TimeEntry> FIRST_CLOCK_IN = Comparator.comparing(TimeEntry::getClockIn)
+            .thenComparing(TimeEntry::getId);
 
     private final ZoneId zone;
     private final List<WorkerShift> shifts = new ArrayList<>();
@@ -73,8 +79,15 @@ final class WorkTally {
                         Collectors.summingLong(entry -> entry.getWorkedMinutes())));
     }
 
+    // Late shifts, not late entries: a shift is late when its first entry clocked in after the threshold.
+    // Someone who steps out and clocks in again during the same shift is not late a second time. The
+    // entries here are never voided, and a shift's entries all share its date, so they are all here.
     int lateCount(Duration lateThreshold) {
-        return (int) entries.stream().filter(entry -> isLate(entry, lateThreshold)).count();
+        Map<Long, TimeEntry> firstEntryByShift = entries.stream()
+                .filter(entry -> entry.getShift() != null)
+                .collect(Collectors.toMap(entry -> entry.getShift().getId(), Function.identity(),
+                        BinaryOperator.minBy(FIRST_CLOCK_IN)));
+        return (int) firstEntryByShift.values().stream().filter(entry -> isLate(entry, lateThreshold)).count();
     }
 
     // Shifts that have ended without any counted entry matched to them

@@ -195,8 +195,8 @@ A rate is what a worker costs per hour, in euros, from `effectiveFrom` on. A pas
 
 Both reports need `from` and `to` (`YYYY-MM-DD`, both included) and cover at most 366 days. A missing date, `from` after `to`, or a longer range answers **400**.
 
-- `GET /api/reports/establishment/{id}/hours` gives one row per worker: planned minutes (the shifts dated in the range), worked minutes (closed, not voided entries whose business day is in the range), the difference, the number of shifts and entries, late clock-ins (an entry matched to a shift that clocked in more than 10 minutes after it started), missed shifts (ended with no entry matched to them), entries without a shift, open entries, the rate in force today, and the planned and actual cost. Totals add up every row. Inactive workers only appear when they have something in the range.
-- `GET /api/reports/worker/{id}/days` lists each day with a shift or an entry, with its shifts and entries and a `status`, taking the first that applies: `OPEN` (an entry is still open), `MISSED` (a shift has ended and there is no entry), `UPCOMING` (a shift hasn't ended and there is no entry), `UNPLANNED` (entries but no shift), `LATE` (an entry matched to a shift clocked in late), otherwise `OK`. A worker can read their own, without costs.
+- `GET /api/reports/establishment/{id}/hours` gives one row per worker: planned minutes (the shifts dated in the range), worked minutes (closed, not voided entries whose business day is in the range), the difference, the number of shifts and entries, late shifts (`lateCount`: shifts whose first entry, leaving out voided ones, clocked in more than 10 minutes after the shift started; a worker who steps out and clocks in again during the same shift is not late twice), missed shifts (ended with no entry matched to them), entries without a shift, open entries, the rate in force today, and the planned and actual cost. Totals add up every row. Inactive workers only appear when they have something in the range.
+- `GET /api/reports/worker/{id}/days` lists each day with a shift or an entry, with its shifts and entries and a `status`, taking the first that applies: `OPEN` (an entry is still open), `MISSED` (a shift has ended and there is no entry), `UPCOMING` (a shift hasn't ended and there is no entry), `UNPLANNED` (entries but no shift), `LATE` (the first entry of one of the day's shifts clocked in late), otherwise `OK`. A worker can read their own, without costs.
 
 A cost is each day's minutes times the rate in force that day, in euros rounded to cents. It is null when the worker has no rate for some of those minutes, because a partial sum would understate it. Totals add up the known costs. Each report runs the same few queries however many workers and days it covers.
 
@@ -210,7 +210,7 @@ The files open directly in a spreadsheet set to Spanish: UTF-8 with a byte order
 
 | Setting | Environment variable | Default |
 |---|---|---|
-| A clock-in later than this after the shift starts is late | `LATE_THRESHOLD` | `PT10M` |
+| A shift whose first clock-in is later than this after it starts is late | `LATE_THRESHOLD` | `PT10M` |
 | A clock-in up to this long before a shift starts is matched to it | `SHIFT_MATCH_WINDOW` | `PT3H` |
 | An entry open longer than this is stale | `STALE_ENTRY_AFTER` | `PT16H` |
 

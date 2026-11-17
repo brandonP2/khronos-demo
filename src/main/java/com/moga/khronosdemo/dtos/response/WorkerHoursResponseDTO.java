@@ -17,7 +17,7 @@ public record WorkerHoursResponseDTO(
         int shiftsCount,
         // Entries that are not voided, open ones included
         int entriesCount,
-        // Entries matched to a shift that clocked in more than the late threshold after it started
+        // Shifts whose first entry clocked in more than the late threshold after they started; at most one per shift
         int lateCount,
         // Shifts that have already ended with no entry matched to them
         int missedShiftsCount,

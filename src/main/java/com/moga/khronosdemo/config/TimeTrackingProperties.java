@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.time.Duration;
 
 /**
- * @param lateThreshold    a clock-in more than this after its shift starts counts as late
+ * @param lateThreshold    a shift whose first clock-in is more than this after it starts counts as late
  * @param shiftMatchWindow a clock-in up to this long before a shift starts (or while it runs) is matched to it
  * @param staleAfter       an entry still open after this long is flagged as stale, a likely forgotten clock-out
  */

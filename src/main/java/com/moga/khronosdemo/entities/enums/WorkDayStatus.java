@@ -10,7 +10,7 @@ public enum WorkDayStatus {
     UPCOMING,
     // There are entries but no shift
     UNPLANNED,
-    // An entry matched to a shift clocked in later than the late threshold
+    // The first entry matched to a shift clocked in later than the late threshold
     LATE,
     OK
 }

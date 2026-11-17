@@ -186,6 +186,34 @@ class ReportTests extends IntegrationTest {
     }
 
     @Test
+    void aShiftIsLateAtMostOnceAndOnlyByItsFirstEntry() throws Exception {
+        Worker gus = createWorker(venue, "gus");
+        // Fri: in late at 18:15, out for a break, back at 20:30. One late shift, not two
+        WorkerShift friday = createShift(gus, bar, FRI, "18:00", "02:00");
+        createTimeEntry(gus, friday, FRI, "2030-05-10T16:15:00Z", "2030-05-10T18:00:00Z", 0);
+        createTimeEntry(gus, friday, FRI, "2030-05-10T18:30:00Z", "2030-05-11T00:00:00Z", 0);
+        // Sat: in on time at 09:55, back at 11:30 after an errand. On time
+        WorkerShift saturday = createShift(gus, bar, SAT, "10:00", "14:00");
+        createTimeEntry(gus, saturday, SAT, "2030-05-11T07:55:00Z", "2030-05-11T09:00:00Z", 0);
+        createTimeEntry(gus, saturday, SAT, "2030-05-11T09:30:00Z", "2030-05-11T12:00:00Z", 0);
+        // Sun: the on-time entry was voided, so the first one that counts is the 09:30 one. Late
+        WorkerShift sunday = createShift(gus, bar, SUN, "08:00", "12:00");
+        TimeEntry voided = createTimeEntry(gus, sunday, SUN, "2030-05-12T06:00:00Z", "2030-05-12T07:00:00Z", 0);
+        voided.setVoidedAt(Instant.parse("2030-05-12T07:05:00Z"));
+        timeEntryRepository.save(voided);
+        createTimeEntry(gus, sunday, SUN, "2030-05-12T07:30:00Z", "2030-05-12T09:30:00Z", 0);
+
+        mockMvc.perform(getJson("/api/reports/establishment/{id}/hours" + RANGE, venue.getId()).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workers[?(@.firstName == 'First gus')].entriesCount", contains(5)))
+                .andExpect(jsonPath("$.workers[?(@.firstName == 'First gus')].lateCount", contains(2)));
+        mockMvc.perform(getJson("/api/reports/worker/{id}/days" + RANGE, gus.getUserId()).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.days[*].date", contains("2030-05-10", "2030-05-11", "2030-05-12")))
+                .andExpect(jsonPath("$.days[*].status", contains("LATE", "OK", "LATE")));
+    }
+
+    @Test
     void aWorkerReadsTheirOwnDaysWithoutCosts() throws Exception {
         mockMvc.perform(getJson("/api/reports/worker/{id}/days" + RANGE, ana.getUserId()).with(as(ana)))
                 .andExpect(status().isOk())
